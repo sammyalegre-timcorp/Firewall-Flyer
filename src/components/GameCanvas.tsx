@@ -1271,72 +1271,264 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
 
         if (m.hazardType === 'monster') {
           const r = m.radius;
+          const mType = activeMonster.id;
 
-          if (isMagicTheme || activeMonster.id === 'bludger') {
-            // Cursed Iron Bludger (spiked dark enchanted quidditch ball with red runes)
-            ctx.fillStyle = '#1e293b';
+          if (mType === 'dementor') {
+            // =========================================================
+            // DEMENTOR PHANTOM (Chilling gliding hooded wraith with frost)
+            // =========================================================
+            const cloakWave = Math.sin(time * 0.04 + m.bobTimer) * 4;
+
+            // 1. Chilling frost / dark aura
+            const aura = ctx.createRadialGradient(0, 0, 5, 0, 0, r * 1.5);
+            aura.addColorStop(0, 'rgba(56, 189, 248, 0.35)');
+            aura.addColorStop(0.6, 'rgba(15, 23, 42, 0.4)');
+            aura.addColorStop(1, 'transparent');
+            ctx.fillStyle = aura;
+            ctx.beginPath();
+            ctx.arc(0, 0, r * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 2. Tattered Flowing Hooded Cloak
+            ctx.fillStyle = activeMonster.secondaryColor || '#090d16';
+            ctx.beginPath();
+            ctx.moveTo(0, -r * 0.85); // Top of deep pointed hood
+            ctx.quadraticCurveTo(r * 0.8, -r * 0.5, r * 0.75, r * 0.6 + cloakWave * 0.5);
+            ctx.lineTo(r * 0.4, r * 0.95 + cloakWave);
+            ctx.lineTo(0, r * 0.7 + cloakWave * 0.7);
+            ctx.lineTo(-r * 0.45, r * 0.95 + cloakWave);
+            ctx.quadraticCurveTo(-r * 0.75, -r * 0.4, 0, -r * 0.85);
+            ctx.closePath();
+            ctx.fill();
+
+            // Cloak border highlight
+            ctx.strokeStyle = activeMonster.primaryColor || '#64748b';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+
+            // 3. Deep Void Inside Hood
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.ellipse(0, -r * 0.3, r * 0.38, r * 0.45, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 4. Piercing Chilling Spectral Eyes (Inside the dark hood)
+            ctx.fillStyle = activeMonster.hazardColor || '#38bdf8';
+            ctx.shadowColor = activeMonster.hazardColor || '#38bdf8';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(-5, -r * 0.32, 2.5, 0, Math.PI * 2);
+            ctx.arc(5, -r * 0.32, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // 5. Skeletal Ethereal Hands reaching forward
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            // Left claw
+            ctx.beginPath();
+            ctx.moveTo(-r * 0.35, -2);
+            ctx.lineTo(-r * 0.8, 4 + cloakWave * 0.5);
+            ctx.lineTo(-r * 0.95, 2 + cloakWave * 0.5);
+            ctx.stroke();
+            // Right claw reaching toward player
+            ctx.beginPath();
+            ctx.moveTo(r * 0.35, -2);
+            ctx.lineTo(r * 0.75, 5 + cloakWave * 0.5);
+            ctx.lineTo(r * 0.95, 3 + cloakWave * 0.5);
+            ctx.stroke();
+
+            // Chilling frost mist particles trailing behind
+            ctx.fillStyle = 'rgba(186, 230, 253, 0.5)';
+            ctx.beginPath();
+            ctx.arc(-r * 0.8 - Math.random() * 8, Math.sin(time * 0.05) * 8, 2, 0, Math.PI * 2);
+            ctx.arc(r * 0.8 + Math.random() * 8, Math.cos(time * 0.05) * 8, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+
+          } else if (mType === 'bludger') {
+            // =========================================================
+            // CURSED IRON BLUDGER (Spiked enchanted quidditch ball with runes)
+            // =========================================================
+            ctx.fillStyle = activeMonster.secondaryColor || '#1e293b';
             ctx.beginPath();
             ctx.arc(0, 0, r * 0.85, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = '#ef4444';
+
+            ctx.strokeStyle = activeMonster.primaryColor || '#dc2626';
             ctx.lineWidth = 2.5;
             ctx.stroke();
 
             // Glowing red runes
-            ctx.fillStyle = '#ef4444';
-            ctx.font = 'bold 12px serif';
+            ctx.fillStyle = activeMonster.hazardColor || '#ef4444';
+            ctx.font = 'bold 13px serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
+            ctx.shadowColor = activeMonster.glowColor || '#f87171';
+            ctx.shadowBlur = 8;
             ctx.fillText('✦', 0, 0);
+            ctx.shadowBlur = 0;
 
-            // Spikes
+            // Orbiting iron spikes
             for (let sp = 0; sp < 6; sp++) {
-              const ang = (sp * Math.PI) / 3 + time * 0.01;
-              ctx.strokeStyle = '#ef4444';
+              const ang = (sp * Math.PI) / 3 + time * 0.015;
+              ctx.strokeStyle = activeMonster.primaryColor || '#dc2626';
+              ctx.lineWidth = 2.2;
               ctx.beginPath();
               ctx.moveTo(Math.cos(ang) * (r * 0.8), Math.sin(ang) * (r * 0.8));
-              ctx.lineTo(Math.cos(ang) * (r * 1.2), Math.sin(ang) * (r * 1.2));
+              ctx.lineTo(Math.cos(ang) * (r * 1.25), Math.sin(ang) * (r * 1.25));
               ctx.stroke();
             }
-          } else if (activeMonster.id === 'dementor') {
-            // Floating Dementor
-            ctx.fillStyle = '#0f172a';
+
+          } else if (mType === 'gargoyle') {
+            // =========================================================
+            // CYBER / STONE GARGOYLE (Winged mechanical beast)
+            // =========================================================
+            const wingFlap = Math.sin(time * 0.05 + m.bobTimer) * 0.7;
+
+            // Wings
+            ctx.fillStyle = activeMonster.secondaryColor || '#2e1065';
+            ctx.strokeStyle = activeMonster.primaryColor || '#a855f7';
+            ctx.lineWidth = 2;
+
+            // Left Wing
+            ctx.save();
+            ctx.rotate(-wingFlap * 0.4);
             ctx.beginPath();
-            ctx.arc(0, -6, r * 0.65, 0, Math.PI * 2);
-            ctx.fill();
-            // Cloak
-            ctx.beginPath();
-            ctx.moveTo(-r * 0.6, -6);
-            ctx.lineTo(-r * 0.9, r);
-            ctx.lineTo(r * 0.9, r);
-            ctx.lineTo(r * 0.6, -6);
+            ctx.moveTo(0, -4);
+            ctx.lineTo(-r * 1.3, -r * 0.9);
+            ctx.lineTo(-r * 0.9, r * 0.2);
             ctx.closePath();
             ctx.fill();
-            ctx.strokeStyle = '#38bdf8';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-          } else {
-            // Cyber Sentinel Drone
-            ctx.fillStyle = activeMonster.secondaryColor;
-            ctx.beginPath();
-            ctx.ellipse(0, 0, r, r * 0.65, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = activeMonster.primaryColor;
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            const bladeAngle = time * 0.03;
-            ctx.save();
-            ctx.rotate(bladeAngle);
-            ctx.strokeStyle = activeMonster.glowColor;
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(-r * 1.3, 0);
-            ctx.lineTo(r * 1.3, 0);
             ctx.stroke();
             ctx.restore();
 
-            ctx.fillStyle = activeMonster.hazardColor;
+            // Right Wing
+            ctx.save();
+            ctx.rotate(wingFlap * 0.4);
+            ctx.beginPath();
+            ctx.moveTo(0, -4);
+            ctx.lineTo(r * 1.3, -r * 0.9);
+            ctx.lineTo(r * 0.9, r * 0.2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+
+            // Gargoyle Head & Horns
+            ctx.fillStyle = activeMonster.secondaryColor || '#2e1065';
+            ctx.beginPath();
+            ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Horns
+            ctx.fillStyle = activeMonster.primaryColor || '#a855f7';
+            ctx.beginPath();
+            ctx.moveTo(-r * 0.4, -r * 0.5);
+            ctx.lineTo(-r * 0.6, -r * 1.1);
+            ctx.lineTo(-r * 0.1, -r * 0.6);
+            ctx.moveTo(r * 0.4, -r * 0.5);
+            ctx.lineTo(r * 0.6, -r * 1.1);
+            ctx.lineTo(r * 0.1, -r * 0.6);
+            ctx.fill();
+
+            // Glowing Eyes
+            ctx.fillStyle = activeMonster.hazardColor || '#e879f9';
+            ctx.beginPath();
+            ctx.arc(-5, -2, 2.5, 0, Math.PI * 2);
+            ctx.arc(5, -2, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+          } else if (mType === 'glitch') {
+            // =========================================================
+            // GLITCH SPECTRE (Distorted shifting holographic cyber entity)
+            // =========================================================
+            const jx = Math.sin(time * 0.15 + m.id) * 3;
+            const jy = Math.cos(time * 0.2 + m.id) * 3;
+
+            // Outer Glitch Voxel Boxes
+            ctx.fillStyle = activeMonster.secondaryColor || '#083344';
+            ctx.fillRect(-r * 0.8 + jx, -r * 0.7 + jy, r * 1.6, r * 1.4);
+            ctx.strokeStyle = activeMonster.primaryColor || '#06b6d4';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(-r * 0.8 + jx, -r * 0.7 + jy, r * 1.6, r * 1.4);
+
+            // Shifting Cyber Voxel Blocks
+            ctx.fillStyle = activeMonster.hazardColor || '#67e8f9';
+            ctx.fillRect(-r * 0.9 - jx, -2, r * 0.4, 4);
+            ctx.fillRect(r * 0.5 + jx, 4, r * 0.5, 4);
+            ctx.fillRect(-4, -r * 0.9 + jy, 8, 4);
+
+            // Digital Eye
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 12px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('01', jx, jy);
+
+          } else if (mType === 'mine') {
+            // =========================================================
+            // PLASMA ARC MINE (Magnetic spiked core with crackling energy)
+            // =========================================================
+            ctx.fillStyle = activeMonster.secondaryColor || '#1c1917';
+            ctx.beginPath();
+            ctx.arc(0, 0, r * 0.75, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = activeMonster.primaryColor || '#f59e0b';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            // 8 Spiked Contact Nodes
+            for (let sn = 0; sn < 8; sn++) {
+              const ang = (sn * Math.PI) / 4 + time * 0.005;
+              ctx.strokeStyle = activeMonster.primaryColor || '#f59e0b';
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.moveTo(Math.cos(ang) * (r * 0.65), Math.sin(ang) * (r * 0.65));
+              ctx.lineTo(Math.cos(ang) * (r * 1.25), Math.sin(ang) * (r * 1.25));
+              ctx.stroke();
+
+              // Spikotip LED
+              ctx.fillStyle = activeMonster.hazardColor || '#fbbf24';
+              ctx.beginPath();
+              ctx.arc(Math.cos(ang) * (r * 1.25), Math.sin(ang) * (r * 1.25), 2.5, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            // Pulsing Plasma Reactor Core
+            const coreGlow = 4 + Math.sin(time * 0.03) * 2;
+            ctx.fillStyle = activeMonster.glowColor || '#fbbf24';
+            ctx.beginPath();
+            ctx.arc(0, 0, coreGlow, 0, Math.PI * 2);
+            ctx.fill();
+
+          } else {
+            // =========================================================
+            // NEON SENTINEL DRONE (Default Cyber Drone)
+            // =========================================================
+            ctx.fillStyle = activeMonster.secondaryColor || '#1e1e2f';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, r, r * 0.65, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = activeMonster.primaryColor || '#ef4444';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Rotating Blade Rotors
+            const bladeAngle = time * 0.035;
+            ctx.save();
+            ctx.rotate(bladeAngle);
+            ctx.strokeStyle = activeMonster.glowColor || '#f87171';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(-r * 1.35, 0);
+            ctx.lineTo(r * 1.35, 0);
+            ctx.stroke();
+            ctx.restore();
+
+            // Pulsing Targeting Sensor
+            ctx.fillStyle = activeMonster.hazardColor || '#ff0055';
             ctx.beginPath();
             ctx.arc(Math.sin(time * 0.01) * 4, 0, 5, 0, Math.PI * 2);
             ctx.fill();

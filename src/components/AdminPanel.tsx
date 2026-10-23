@@ -779,32 +779,181 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Object.values(formData.monsterConfigs).map((monster) => {
                   const isSelected = formData.selectedMonsterId === monster.id;
+                  
+                  // Visual symbol & avatar style per monster
+                  let symbol = '🛸';
+                  let iconBg = 'bg-slate-900';
+                  let iconBorder = 'border-rose-500';
+                  
+                  if (monster.id === 'dementor') {
+                    symbol = '👻';
+                    iconBg = 'bg-slate-950';
+                    iconBorder = 'border-cyan-400';
+                  } else if (monster.id === 'bludger') {
+                    symbol = '⚡';
+                    iconBg = 'bg-red-950/60';
+                    iconBorder = 'border-red-500';
+                  } else if (monster.id === 'gargoyle') {
+                    symbol = '🦇';
+                    iconBg = 'bg-purple-950/60';
+                    iconBorder = 'border-purple-400';
+                  } else if (monster.id === 'glitch') {
+                    symbol = '👾';
+                    iconBg = 'bg-cyan-950/60';
+                    iconBorder = 'border-cyan-400';
+                  } else if (monster.id === 'mine') {
+                    symbol = '💥';
+                    iconBg = 'bg-amber-950/60';
+                    iconBorder = 'border-amber-400';
+                  }
+
                   return (
                     <div
                       key={monster.id}
                       onClick={() => setFormData({ ...formData, selectedMonsterId: monster.id })}
-                      className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                      className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
                         isSelected
-                          ? 'border-rose-400 bg-rose-950/20 ring-1 ring-rose-400/80 shadow-lg'
+                          ? 'border-rose-400 bg-rose-950/30 ring-2 ring-rose-400/80 shadow-xl'
                           : 'border-slate-800 bg-slate-800/40 hover:bg-slate-800/70'
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-bold text-white">{monster.name}</span>
-                        {isSelected && (
-                          <span className="text-[10px] font-bold text-rose-300 bg-rose-900/60 px-2 py-0.5 rounded border border-rose-500/30">
-                            Active Monster
-                          </span>
-                        )}
+                      <div>
+                        {/* Visual Avatar Preview */}
+                        <div className={`w-16 h-16 mx-auto mb-3 rounded-2xl border-2 flex items-center justify-center text-3xl shadow-lg transition-transform ${iconBg} ${iconBorder} ${isSelected ? 'scale-105' : ''}`}>
+                          {symbol}
+                        </div>
+
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-sm font-bold text-white">{monster.name}</span>
+                          {isSelected && (
+                            <span className="text-[10px] font-bold text-rose-300 bg-rose-900/80 px-2 py-0.5 rounded border border-rose-500/40 uppercase">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-400 leading-relaxed mb-4">{monster.tagline}</p>
                       </div>
-                      <p className="text-xs text-slate-400 mb-3">{monster.tagline}</p>
+
+                      <div className="pt-3 border-t border-slate-700/50 flex items-center justify-between text-xs">
+                        <span className="text-slate-400 font-mono text-[11px] uppercase">
+                          {monster.behavior}
+                        </span>
+                        <span className={`font-bold ${isSelected ? 'text-rose-400' : 'text-slate-500'}`}>
+                          {isSelected ? '✓ Equipped' : 'Click to Equip'}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
               </div>
+
+              {/* Color Customizer for Selected Monster */}
+              {formData.monsterConfigs[formData.selectedMonsterId] && (
+                <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">
+                        Customize {formData.monsterConfigs[formData.selectedMonsterId].name} Colors
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Adjust aura, glow, and hazard highlights in real time.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">
+                        Primary / Shield Color
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={formData.monsterConfigs[formData.selectedMonsterId].primaryColor}
+                          onChange={(e) => {
+                            const curId = formData.selectedMonsterId;
+                            setFormData({
+                              ...formData,
+                              monsterConfigs: {
+                                ...formData.monsterConfigs,
+                                [curId]: {
+                                  ...formData.monsterConfigs[curId],
+                                  primaryColor: e.target.value,
+                                },
+                              },
+                            });
+                          }}
+                          className="w-9 h-9 rounded-lg border border-slate-700 cursor-pointer bg-slate-800 p-0.5"
+                        />
+                        <span className="text-xs font-mono text-slate-300 uppercase">
+                          {formData.monsterConfigs[formData.selectedMonsterId].primaryColor}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">
+                        Glow / Aura Color
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={formData.monsterConfigs[formData.selectedMonsterId].glowColor}
+                          onChange={(e) => {
+                            const curId = formData.selectedMonsterId;
+                            setFormData({
+                              ...formData,
+                              monsterConfigs: {
+                                ...formData.monsterConfigs,
+                                [curId]: {
+                                  ...formData.monsterConfigs[curId],
+                                  glowColor: e.target.value,
+                                },
+                              },
+                            });
+                          }}
+                          className="w-9 h-9 rounded-lg border border-slate-700 cursor-pointer bg-slate-800 p-0.5"
+                        />
+                        <span className="text-xs font-mono text-slate-300 uppercase">
+                          {formData.monsterConfigs[formData.selectedMonsterId].glowColor}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">
+                        Hazard / Eye Laser Color
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={formData.monsterConfigs[formData.selectedMonsterId].hazardColor}
+                          onChange={(e) => {
+                            const curId = formData.selectedMonsterId;
+                            setFormData({
+                              ...formData,
+                              monsterConfigs: {
+                                ...formData.monsterConfigs,
+                                [curId]: {
+                                  ...formData.monsterConfigs[curId],
+                                  hazardColor: e.target.value,
+                                },
+                              },
+                            });
+                          }}
+                          className="w-9 h-9 rounded-lg border border-slate-700 cursor-pointer bg-slate-800 p-0.5"
+                        />
+                        <span className="text-xs font-mono text-slate-300 uppercase">
+                          {formData.monsterConfigs[formData.selectedMonsterId].hazardColor}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
