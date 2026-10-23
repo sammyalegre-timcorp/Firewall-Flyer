@@ -1,0 +1,6 @@
+{
+  "name": "Neon Glide - Cyber Arcade Runner",
+  "description": "Retro arcade flight game with customizable branded skyscrapers, selectable anime cyber pilots, obstacles, coin collection, and a full-featured /admin customizer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
