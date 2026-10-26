@@ -435,7 +435,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         // -------------------------------------------------------------
         if (state.cameraX >= state.nextMonsterDist) {
           const spawnY = ceilingY + 30 + Math.random() * (floorY - ceilingY - 70);
-          const isZapper = Math.random() < 0.35;
+          // In Harry Potter / Magic Academy theme, disable vertical zapper hazards completely
+          const isZapper = isMagicTheme ? false : Math.random() < 0.35;
 
           state.monsters.push({
             id: state.nextId++,
@@ -482,6 +483,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         // -------------------------------------------------------------
         for (let i = state.monsters.length - 1; i >= 0; i--) {
           const m = state.monsters[i];
+          if (isMagicTheme && m.hazardType === 'zapper') {
+            state.monsters.splice(i, 1);
+            continue;
+          }
           m.x -= baseScrollSpeed;
 
           m.bobTimer += 0.04 * dt;
@@ -1266,6 +1271,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       // DRAW HAZARDS / MONSTERS
       // -------------------------------------------------------------
       state.monsters.forEach((m) => {
+        if (isMagicTheme && m.hazardType === 'zapper') return;
         ctx.save();
         ctx.translate(m.x, m.y);
 
