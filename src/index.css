@@ -50,3 +50,18 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #00f0ff;
 }
+
+/* Fullscreen support */
+:fullscreen,
+:-webkit-full-screen,
+:-moz-full-screen,
+:-ms-fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  background-color: #070817 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+

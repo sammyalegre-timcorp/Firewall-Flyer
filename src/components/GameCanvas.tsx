@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { AppConfig } from '../types/game';
 import { sound } from '../utils/audio';
 import confetti from 'canvas-confetti';
-import { RotateCcw, Pause, Play, Zap, Sparkles } from 'lucide-react';
+import { RotateCcw, Pause, Play, Zap, Sparkles, Maximize2, Minimize2 } from 'lucide-react';
 
 interface GameCanvasProps {
   config: AppConfig;
@@ -63,6 +63,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   const [highScore, setHighScore] = useState(0);
   const [isNewHighScore, setIsNewHighScore] = useState(false);
   const [levelUpBanner, setLevelUpBanner] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const isFullscreenRef = useRef(false);
+
+  useEffect(() => {
+    isFullscreenRef.current = isFullscreen;
+  }, [isFullscreen]);
 
   // Preloaded images
   const logoImgRef = useRef<HTMLImageElement | null>(null);
@@ -156,7 +162,76 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     };
   }, [config.settings.bgmEnabled, gameState]);
 
-  // Canvas Resize observer
+  // Sync fullscreen state with document fullscreen events (standard + webkit vendor)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isDocFs = Boolean(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      setIsFullscreen(isDocFs);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const isNativeFs = Boolean(
+      document.fullscreenElement ||
+      (document as any).webkitFullscreenElement ||
+      (document as any).mozFullScreenElement ||
+      (document as any).msFullscreenElement
+    );
+
+    if (isNativeFs || isFullscreenRef.current) {
+      // Exit fullscreen
+      if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
+        try {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if ((document as any).webkitExitFullscreen) {
+            (document as any).webkitExitFullscreen();
+          }
+        } catch {
+          // ignore rejection
+        }
+      }
+      setIsFullscreen(false);
+    } else {
+      // Enter fullscreen (try native API with graceful fallback to CSS pseudo-fullscreen)
+      try {
+        if (container.requestFullscreen) {
+          await container.requestFullscreen();
+        } else if ((container as any).webkitRequestFullscreen) {
+          (container as any).webkitRequestFullscreen();
+        } else if ((container as any).mozRequestFullScreen) {
+          (container as any).mozRequestFullScreen();
+        } else if ((container as any).msRequestFullscreen) {
+          (container as any).msRequestFullscreen();
+        }
+      } catch (err) {
+        console.warn('Native fullscreen blocked or unsupported; fallback to full viewport mode', err);
+      }
+      setIsFullscreen(true);
+    }
+  }, []);
+
+  // Canvas Resize observer (adapts instantly on window resize and fullscreen toggle)
   useEffect(() => {
     const handleResize = () => {
       const canvas = canvasRef.current;
@@ -168,6 +243,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
 
       const w = Math.floor(rect.width);
       const h = Math.floor(rect.height);
+      if (w <= 0 || h <= 0) return;
 
       canvas.width = w * dpr;
       canvas.height = h * dpr;
@@ -183,9 +259,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     };
 
     handleResize();
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      ro = new ResizeObserver(() => {
+        handleResize();
+      });
+      ro.observe(containerRef.current);
+    }
+
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (ro) ro.disconnect();
+    };
+  }, [isFullscreen]);
 
   // -----------------------------------------------------------------
   // Input Handling: Hold to fly, Release to fall
@@ -225,7 +313,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     stopThrust();
   };
 
-  // Keyboard handlers
+  // Keyboard handlers (Space/W/Up to thrust, P to pause, F to toggle fullscreen, Esc to exit)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
@@ -233,8 +321,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         if (!stateRef.current.isThrusting) {
           startThrust();
         }
-      } else if (e.code === 'KeyP' || e.code === 'Escape') {
+      } else if (e.code === 'KeyF') {
+        e.preventDefault();
+        toggleFullscreen();
+      } else if (e.code === 'KeyP') {
         togglePause();
+      } else if (e.code === 'Escape') {
+        if (isFullscreenRef.current) {
+          toggleFullscreen();
+        } else {
+          togglePause();
+        }
       }
     };
 
@@ -251,7 +348,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [startThrust, stopThrust]);
+  }, [startThrust, stopThrust, toggleFullscreen]);
 
   const resetToReady = () => {
     const h = stateRef.current.canvasHeight || 560;
@@ -624,8 +721,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         // ==============================================================
         const corridorLoop = 2200;
         const scrollX = state.cameraX % corridorLoop;
+        const maxCorridorCycles = Math.max(2, Math.ceil(w / corridorLoop) + 1);
 
-        for (let cycle = -1; cycle <= 1; cycle++) {
+        for (let cycle = -1; cycle <= maxCorridorCycles; cycle++) {
           const baseOffset = cycle * corridorLoop - scrollX;
           if (baseOffset + corridorLoop < -100 || baseOffset > w + 200) continue;
 
@@ -1164,8 +1262,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         // Looping Midground Skyline with BIG LOGO BUILDING
         const loopWidth = 1800;
         const scrollOffset = state.cameraX % loopWidth;
+        const maxCityCycles = Math.max(2, Math.ceil(w / loopWidth) + 1);
 
-        for (let cycle = -1; cycle <= 1; cycle++) {
+        for (let cycle = -1; cycle <= maxCityCycles; cycle++) {
           const cycleBaseX = cycle * loopWidth - scrollOffset;
           if (cycleBaseX + loopWidth < -100 || cycleBaseX > w + 200) continue;
 
@@ -2133,7 +2232,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full min-h-[500px] bg-[#070817] sm:rounded-2xl overflow-hidden select-none border border-slate-800 shadow-2xl flex flex-col items-center justify-center cursor-pointer"
+      className={`relative select-none flex flex-col items-center justify-center cursor-pointer transition-all duration-200 overflow-hidden bg-[#070817] ${
+        isFullscreen
+          ? 'fixed inset-0 z-50 w-screen h-screen rounded-none border-none shadow-none m-0 p-0'
+          : 'w-full h-full min-h-[500px] sm:rounded-2xl border border-slate-800 shadow-2xl'
+      }`}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
@@ -2148,37 +2251,64 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       )}
 
       {/* In-Game HUD */}
-      <div className="absolute top-0 left-0 right-0 p-4 flex items-center justify-between z-20 pointer-events-none">
-        <div className="flex items-center gap-3">
-          <div className="bg-slate-900/85 backdrop-blur-md px-4 py-2 rounded-xl border border-amber-500/40 shadow-lg flex items-center gap-2.5">
+      <div className="absolute top-0 left-0 right-0 p-3 sm:p-4 flex items-center justify-between z-40 pointer-events-none">
+        <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
+          <div className="bg-slate-900/85 backdrop-blur-md px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl border border-amber-500/40 shadow-lg flex items-center gap-2 sm:gap-2.5">
             <span className="w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center text-[10px] text-slate-900 font-black">
               {isMagicTheme ? '⚡' : '★'}
             </span>
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+            <span className="text-[11px] sm:text-xs font-bold text-slate-300 uppercase tracking-wider">
               {isMagicTheme ? 'Snitches' : 'Score'}
             </span>
-            <span className="text-2xl font-black text-amber-300 font-mono-num leading-none">{coinsCollected}</span>
+            <span className="text-xl sm:text-2xl font-black text-amber-300 font-mono-num leading-none">{coinsCollected}</span>
           </div>
 
-          <div className="bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/60 shadow-lg flex items-center gap-1.5">
-            <span className="text-[11px] font-semibold text-slate-400">LVL</span>
-            <span className="text-sm font-bold text-cyan-400 font-mono-num">{currentLevel}</span>
+          <div className="bg-slate-900/80 backdrop-blur-md px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-slate-700/60 shadow-lg flex items-center gap-1.5">
+            <span className="text-[10px] sm:text-[11px] font-semibold text-slate-400">LVL</span>
+            <span className="text-xs sm:text-sm font-bold text-cyan-400 font-mono-num">{currentLevel}</span>
           </div>
         </div>
 
-        {/* Pause Button */}
-        {gameState === 'PLAYING' && (
+        {/* Action Controls: Pause & Fullscreen */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {/* Pause Button */}
+          {gameState === 'PLAYING' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePause();
+              }}
+              className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 transition-colors shadow-md cursor-pointer"
+              title="Pause (P or Esc)"
+            >
+              <Pause className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Full Screen Toggle Button */}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              togglePause();
+              toggleFullscreen();
             }}
-            className="p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 transition-colors pointer-events-auto shadow-md"
-            title="Pause (P or Esc)"
+            className={`p-2 sm:p-2.5 rounded-xl backdrop-blur-md border transition-all shadow-md cursor-pointer flex items-center gap-1.5 ${
+              isFullscreen
+                ? 'bg-amber-950/85 hover:bg-amber-900 text-amber-300 border-amber-500/50 shadow-amber-500/20'
+                : 'bg-slate-900/85 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/60 shadow-black/40'
+            }`}
+            title={isFullscreen ? 'Exit Full Screen (F or Esc)' : 'Full Screen (F)'}
+            aria-label={isFullscreen ? 'Exit Full Screen' : 'Enter Full Screen'}
           >
-            <Pause className="w-4 h-4" />
+            {isFullscreen ? (
+              <Minimize2 className="w-4 h-4 text-amber-400 shrink-0" />
+            ) : (
+              <Maximize2 className="w-4 h-4 text-cyan-400 shrink-0" />
+            )}
+            <span className="text-xs font-bold hidden sm:inline">
+              {isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+            </span>
           </button>
-        )}
+        </div>
       </div>
 
       {/* Level Up Banner */}
