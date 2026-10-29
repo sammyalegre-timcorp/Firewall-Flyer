@@ -442,16 +442,40 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   // Keyboard handlers (Space/W/Up to thrust, P to pause, F to toggle fullscreen, Esc to exit)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Never intercept keystrokes when typing into an input, textarea, or registration modal
       const target = e.target as HTMLElement | null;
-      if (
-        showRegistrationRef.current ||
-        (target &&
-          (target.tagName === 'INPUT' ||
-            target.tagName === 'TEXTAREA' ||
-            target.tagName === 'SELECT' ||
-            target.isContentEditable))
-      ) {
+      const isTyping = Boolean(
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      );
+
+      // Allow F to toggle fullscreen anytime if not typing in an input field
+      if (e.code === 'KeyF' && !isTyping) {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Allow Escape to exit fullscreen or dismiss instructions
+      if (e.code === 'Escape') {
+        if (showInstructionsRef.current) {
+          setShowInstructions(false);
+          return;
+        }
+        if (isFullscreenRef.current) {
+          toggleFullscreen();
+          return;
+        }
+        if (!showRegistrationRef.current) {
+          togglePause();
+          return;
+        }
+      }
+
+      // Never intercept other keystrokes (like Space) when typing or registering
+      if (isTyping || showRegistrationRef.current) {
         return;
       }
 
@@ -465,21 +489,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         if (!stateRef.current.isThrusting) {
           startThrust();
         }
-      } else if (e.code === 'KeyF') {
-        e.preventDefault();
-        toggleFullscreen();
       } else if (e.code === 'KeyP') {
         togglePause();
-      } else if (e.code === 'Escape') {
-        if (showInstructionsRef.current) {
-          setShowInstructions(false);
-          return;
-        }
-        if (isFullscreenRef.current) {
-          toggleFullscreen();
-        } else {
-          togglePause();
-        }
       }
     };
 
@@ -3003,16 +3014,34 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
             onTouchEnd={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header / Event Name Tag */}
+            {/* Header / Event Name Tag & Fullscreen Action */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/30">
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/30 truncate max-w-[150px] sm:max-w-none">
                   {config.settings.activeEventName || 'Event Check-In'}
                 </span>
-                <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Official Register</span>
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFullscreen();
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 transition-colors flex items-center gap-1.5 text-[10px] sm:text-xs font-bold cursor-pointer shadow-sm"
+                    title={isFullscreen ? 'Exit Full Screen (F or Esc)' : 'Full Screen (F)'}
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+                    ) : (
+                      <Maximize2 className="w-3.5 h-3.5 text-cyan-400" />
+                    )}
+                    <span>{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</span>
+                  </button>
+                  <span className="text-[10px] font-semibold text-slate-400 hidden sm:flex items-center gap-1">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Official Register</span>
+                  </span>
+                </div>
               </div>
 
               <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-wider leading-tight">
@@ -3178,53 +3207,71 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         </div>
       )}
 
-      {/* HOW TO PLAY INSTRUCTIONS MODAL (COMPACT, NON-SCROLLABLE, HIGHLIGHTED OBJECTIVE AT TOP) */}
+      {/* HOW TO PLAY INSTRUCTIONS MODAL (LARGER, NON-SCROLLABLE, HIGHLIGHTED OBJECTIVE AT TOP, FULLSCREEN TOGGLE) */}
       {showInstructions && (
         <div
-          className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-hidden animate-fadeIn select-none"
+          className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-hidden animate-fadeIn select-none"
           onClick={(e) => e.stopPropagation()}
         >
           <div
-            className={`relative max-w-md w-full rounded-2xl p-4 sm:p-5 shadow-2xl border flex flex-col justify-between max-h-[96%] overflow-hidden ${
+            className={`relative max-w-xl sm:max-w-2xl w-full rounded-3xl p-5 sm:p-6 shadow-2xl border flex flex-col justify-between max-h-[96%] overflow-hidden ${
               isMagicTheme
                 ? 'bg-slate-950/95 border-amber-500/50 shadow-amber-500/25'
                 : 'bg-slate-950/95 border-cyan-500/40 shadow-cyan-500/25'
             }`}
           >
-            {/* Top Close 'X' button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowInstructions(false);
-              }}
-              className="absolute top-3.5 right-3.5 p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer border border-slate-800"
-              title="Close Guide & Hover"
-              aria-label="Close Guide"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            {/* Top Close 'X' and Full Screen buttons */}
+            <div className="absolute top-4 right-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFullscreen();
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white transition-colors cursor-pointer border border-slate-700/80 flex items-center gap-1.5 text-xs font-bold shadow-sm"
+                title={isFullscreen ? 'Exit Full Screen (F or Esc)' : 'Full Screen (F)'}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="w-4 h-4 text-amber-400 shrink-0" />
+                ) : (
+                  <Maximize2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                )}
+                <span className="hidden sm:inline">{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</span>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowInstructions(false);
+                }}
+                className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer border border-slate-800"
+                title="Close Guide & Hover"
+                aria-label="Close Guide"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
             {/* Header Mini Bar */}
-            <div className="flex items-center gap-2 mb-2.5 pr-8">
-              <span className="text-xl shrink-0">{isMagicTheme ? '⚡' : '🚀'}</span>
+            <div className="flex items-center gap-2.5 mb-3 pr-28 sm:pr-36">
+              <span className="text-2xl shrink-0">{isMagicTheme ? '⚡' : '🚀'}</span>
               <div>
-                <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider leading-none">
+                <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-wider leading-none">
                   {isMagicTheme ? 'Hogwarts Flight Guide' : 'Pilot Flight Protocol'}
                 </h3>
-                <span className="text-[10px] text-slate-400 font-medium">Quick rules & controls</span>
+                <span className="text-xs text-slate-400 font-medium">Flight rules & mission controls</span>
               </div>
             </div>
 
             {/* HIGHLIGHTED PRIMARY OBJECTIVE (AT THE TOP) */}
             <div
-              className={`p-3 rounded-xl border mb-3 flex items-center gap-3 shadow-lg ${
+              className={`p-3.5 sm:p-4 rounded-2xl border mb-3 sm:mb-3.5 flex items-center gap-3.5 shadow-lg ${
                 isMagicTheme
                   ? 'bg-gradient-to-r from-amber-950/70 via-amber-900/40 to-slate-900/90 border-amber-400/80 shadow-amber-500/20'
                   : 'bg-gradient-to-r from-cyan-950/70 via-blue-900/40 to-slate-900/90 border-cyan-400/80 shadow-cyan-500/20'
               }`}
             >
               <div
-                className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 shadow-md ${
+                className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 shadow-md ${
                   isMagicTheme ? 'bg-amber-400 text-slate-950' : 'bg-cyan-400 text-slate-950'
                 }`}
               >
@@ -3233,17 +3280,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 mb-0.5">
                   <span
-                    className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded font-mono ${
+                    className={`text-[10px] font-black uppercase px-2 py-0.5 rounded font-mono ${
                       isMagicTheme ? 'bg-amber-400/20 text-amber-300' : 'bg-cyan-400/20 text-cyan-300'
                     }`}
                   >
                     PRIMARY OBJECTIVE
                   </span>
                 </div>
-                <h4 className="text-xs sm:text-sm font-black text-white leading-tight">
+                <h4 className="text-sm sm:text-base font-black text-white leading-tight">
                   {isMagicTheme ? 'Catch Golden Snitches!' : 'Collect As Many Coins As Possible!'}
                 </h4>
-                <p className="text-[10px] sm:text-[11px] text-slate-300 leading-snug mt-0.5">
+                <p className="text-xs sm:text-[13px] text-slate-200 leading-snug mt-1">
                   {isMagicTheme
                     ? 'Collect snitches to score high points, speed up, and add extra seconds to your flight timer!'
                     : 'Grab coins to maximize score, trigger level boosts, and extend your flight timer bar!'}
@@ -3251,42 +3298,42 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               </div>
             </div>
 
-            {/* 4 Rules Grid (2x2 Compact) */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            {/* 4 Rules Grid (2x2 Spacious) */}
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 mb-3 sm:mb-3.5">
               {/* Rule 1: Fly / Lift */}
-              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 border border-slate-800 flex flex-col justify-between">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
-                    <ArrowUp className="w-3 h-3" /> Fly & Ascend
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-900/85 border border-slate-800 flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs sm:text-sm font-bold text-emerald-400 flex items-center gap-1">
+                    <ArrowUp className="w-3.5 h-3.5" /> Fly & Ascend
                   </span>
-                  <span className="text-[8px] font-mono px-1 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+                  <span className="text-[9px] sm:text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
                     HOLD CLICK
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-300 leading-tight">
+                <p className="text-xs sm:text-[13px] text-slate-300 leading-relaxed">
                   Click & hold mouse, tap screen, or hold Space to fly upward.
                 </p>
               </div>
 
               {/* Rule 2: Fall / Descend */}
-              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 border border-slate-800 flex flex-col justify-between">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-bold text-sky-400 flex items-center gap-1">
-                    <ArrowDown className="w-3 h-3" /> Glide & Fall
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-900/85 border border-slate-800 flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs sm:text-sm font-bold text-sky-400 flex items-center gap-1">
+                    <ArrowDown className="w-3.5 h-3.5" /> Glide & Fall
                   </span>
-                  <span className="text-[8px] font-mono px-1 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-500/30">
+                  <span className="text-[9px] sm:text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-500/30">
                     RELEASE
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-300 leading-tight">
+                <p className="text-xs sm:text-[13px] text-slate-300 leading-relaxed">
                   Release click to fall smoothly. Feather taps to hover.
                 </p>
               </div>
 
               {/* Rule 3: Avoid Monster */}
-              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 border border-rose-500/40 flex items-center gap-2">
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-900/85 border border-rose-500/40 flex items-center gap-3">
                 <div
-                  className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center border text-lg overflow-hidden relative"
+                  className="w-12 h-12 rounded-xl shrink-0 flex items-center justify-center border text-2xl overflow-hidden relative"
                   style={{
                     backgroundColor: activeMonster.secondaryColor || '#1e1e2f',
                     borderColor: activeMonster.hazardColor || '#ef4444',
@@ -3313,25 +3360,25 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[10px] font-bold text-rose-300 block truncate">
+                  <span className="text-xs sm:text-sm font-bold text-rose-300 block truncate">
                     Avoid {activeMonster.name}
                   </span>
-                  <p className="text-[9px] text-slate-400 leading-tight">
+                  <p className="text-[11px] sm:text-xs text-slate-300 leading-snug">
                     Hit = instant crash. Steer clear!
                   </p>
                 </div>
               </div>
 
               {/* Rule 4: Don't Let Character Fall */}
-              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 border border-amber-500/40 flex items-center gap-2">
-                <div className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center bg-amber-950/50 border border-amber-500/40 text-amber-400">
-                  <ShieldAlert className="w-4 h-4" />
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-900/85 border border-amber-500/40 flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl shrink-0 flex items-center justify-center bg-amber-950/50 border border-amber-500/40 text-amber-400">
+                  <ShieldAlert className="w-6 h-6" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[10px] font-bold text-amber-300 block">
+                  <span className="text-xs sm:text-sm font-bold text-amber-300 block">
                     Do Not Fall or Crash
                   </span>
-                  <p className="text-[9px] text-slate-400 leading-tight">
+                  <p className="text-[11px] sm:text-xs text-slate-300 leading-snug">
                     Hitting ground or ceiling destroys flight.
                   </p>
                 </div>
@@ -3340,16 +3387,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
 
             {/* Timer Note Banner */}
             {(config.settings.enableTimer ?? true) && (
-              <div className="mb-3 px-2.5 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800 flex items-center justify-between text-[10px] text-slate-300">
-                <span className="flex items-center gap-1.5">
-                  <Clock className="w-3 h-3 text-amber-400" />
+              <div className="mb-3 sm:mb-3.5 px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between text-xs sm:text-[13px] text-slate-300">
+                <span className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400" />
                   <span>
-                    Timer: <strong>{config.settings.gameDurationSeconds ?? 60}s</strong>
+                    Flight Timer: <strong className="text-white">{config.settings.gameDurationSeconds ?? 60}s</strong>
                   </span>
                 </span>
                 {(config.settings.addTimeOnCoin ?? true) && (
-                  <span className="text-emerald-400 font-semibold font-mono">
-                    +{config.settings.timeBonusSeconds ?? 2}s added per coin!
+                  <span className="text-emerald-400 font-bold font-mono">
+                    +{config.settings.timeBonusSeconds ?? 2}s per coin!
                   </span>
                 )}
               </div>
@@ -3361,10 +3408,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                 e.stopPropagation();
                 setShowInstructions(false);
               }}
-              className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-2 ${
+              className={`w-full py-3 px-5 rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-2 ${
                 isMagicTheme
-                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
-                  : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
+                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-amber-500/20'
+                  : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-cyan-500/20'
               }`}
             >
               <span>Got It — Ready to Play</span>
