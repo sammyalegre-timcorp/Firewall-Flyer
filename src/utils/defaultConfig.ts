@@ -1,7 +1,7 @@
 import { AppConfig, Character, MonsterConfig, CoinConfig, SkylineTheme, GameTheme } from '../types/game';
 
 // Generated asset paths
-export const DEFAULT_BRAND_LOGO = '/src/assets/images/brand_cyber_logo_1792721443107.jpg';
+export const DEFAULT_BRAND_LOGO = '/assets/aistudio/TIM_LOGO_low_quality_d0071df0.png';
 export const DEFAULT_SKYLINE_BG = '/src/assets/images/neon_city_skyline_1792721444005.jpg';
 export const DEFAULT_BOY_AVATAR = '/src/assets/images/hero_boy_cyber_1792721445269.jpg';
 export const DEFAULT_GIRL_AVATAR = '/src/assets/images/hero_girl_cyber_1792721445700.jpg';
@@ -401,8 +401,10 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   activeSkylineThemeId: 'cyber_night',
   customSkyline: SKYLINE_THEMES.cyber_night,
   branding: {
-    brandName: 'CYBERNETIX',
-    tagline: 'FUTURE TECH LABS',
+    brandName: 'TIM',
+    tagline: 'INNOVATION & TECHNOLOGY',
+    showBrandName: true,
+    showTagline: true,
     logoUrl: DEFAULT_BRAND_LOGO,
     neonColor: '#00f0ff',
     accentColor: '#ff007f',
@@ -423,29 +425,69 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     bgmEnabled: false,
     crtEffect: true,
     showHitboxes: false,
+    gameDurationSeconds: 60,
+    enableTimer: true,
+    addTimeOnCoin: true,
+    timeBonusSeconds: 2,
   },
 };
 
-const STORAGE_KEY = 'neon_glide_config_v6';
+const STORAGE_KEY = 'neon_glide_config_v7';
+const PREV_STORAGE_KEY = 'neon_glide_config_v6';
 const SCORES_KEY = 'neon_glide_highscores_v6';
 
 export function loadAppConfig(): AppConfig {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(PREV_STORAGE_KEY);
     if (!raw) return DEFAULT_APP_CONFIG;
     const parsed = JSON.parse(raw);
     const theme: GameTheme = parsed.theme || 'cyber_arcade';
     const fallbackChars = theme === 'magic_academy' ? WIZARD_CHARACTERS : CYBER_CHARACTERS;
 
+    // Migrate previous placeholder/cyber logo to TIM default logo across all themes
+    const savedLogo = parsed.branding?.logoUrl;
+    const isOldLogo =
+      !savedLogo ||
+      savedLogo.includes('brand_cyber_logo') ||
+      savedLogo.includes('1792721443107');
+
+    const effectiveLogo = isOldLogo ? DEFAULT_BRAND_LOGO : savedLogo;
+
+    // Merge monster configs with custom images preserved
+    const mergedMonsters: Record<string, MonsterConfig> = { ...MONSTER_CONFIGS };
+    if (parsed.monsterConfigs) {
+      Object.keys(parsed.monsterConfigs).forEach((mKey) => {
+        if (mergedMonsters[mKey]) {
+          mergedMonsters[mKey] = {
+            ...mergedMonsters[mKey],
+            ...parsed.monsterConfigs[mKey],
+          };
+        }
+      });
+    }
+
     return {
       ...DEFAULT_APP_CONFIG,
       ...parsed,
       theme,
-      branding: { ...DEFAULT_APP_CONFIG.branding, ...(parsed.branding || {}) },
-      settings: { ...DEFAULT_APP_CONFIG.settings, ...(parsed.settings || {}) },
+      branding: {
+        ...DEFAULT_APP_CONFIG.branding,
+        ...(parsed.branding || {}),
+        logoUrl: effectiveLogo,
+        showBrandName: parsed.branding?.showBrandName !== undefined ? parsed.branding.showBrandName : true,
+        showTagline: parsed.branding?.showTagline !== undefined ? parsed.branding.showTagline : true,
+      },
+      settings: {
+        ...DEFAULT_APP_CONFIG.settings,
+        ...(parsed.settings || {}),
+        gameDurationSeconds: parsed.settings?.gameDurationSeconds ?? 60,
+        enableTimer: parsed.settings?.enableTimer ?? true,
+        addTimeOnCoin: parsed.settings?.addTimeOnCoin ?? true,
+        timeBonusSeconds: parsed.settings?.timeBonusSeconds ?? 2,
+      },
       customSkyline: { ...DEFAULT_APP_CONFIG.customSkyline, ...(parsed.customSkyline || {}) },
       characters: parsed.characters && parsed.characters.length === 6 ? parsed.characters : fallbackChars,
-      monsterConfigs: { ...MONSTER_CONFIGS, ...(parsed.monsterConfigs || {}) },
+      monsterConfigs: mergedMonsters as any,
       coinConfigs: { ...COIN_CONFIGS, ...(parsed.coinConfigs || {}) },
     };
   } catch {

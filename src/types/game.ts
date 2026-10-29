@@ -31,6 +31,8 @@ export interface MonsterConfig {
   hazardColor: string;
   behavior: 'hover' | 'sine-wave' | 'pulse';
   hitboxRadius: number;
+  dangerRating?: string;
+  customImageDataUrl?: string;
 }
 
 export type CoinStyleId = 'token' | 'crystal' | 'diamond' | 'star' | 'custom';
@@ -61,6 +63,8 @@ export interface SkylineTheme {
 export interface BrandingConfig {
   brandName: string;
   tagline: string;
+  showBrandName?: boolean;
+  showTagline?: boolean;
   logoUrl: string; // custom image or generated asset path
   neonColor: string;
   accentColor: string;
@@ -83,6 +87,10 @@ export interface GameSettings {
   bgmEnabled: boolean;
   crtEffect: boolean;
   showHitboxes: boolean;
+  gameDurationSeconds: number; // default 60 (countdown before time out)
+  enableTimer: boolean; // default true
+  addTimeOnCoin: boolean; // default true (add bonus time on coin collection)
+  timeBonusSeconds: number; // default 2 (seconds added per coin collected)
 }
 
 export interface AppConfig {

@@ -2,7 +2,23 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { AppConfig } from '../types/game';
 import { sound } from '../utils/audio';
 import confetti from 'canvas-confetti';
-import { RotateCcw, Pause, Play, Zap, Sparkles, Maximize2, Minimize2 } from 'lucide-react';
+import {
+  RotateCcw,
+  Pause,
+  Play,
+  Zap,
+  Sparkles,
+  Maximize2,
+  Minimize2,
+  HelpCircle,
+  ArrowUp,
+  ArrowDown,
+  ShieldAlert,
+  AlertTriangle,
+  Flame,
+  X,
+  Clock,
+} from 'lucide-react';
 
 interface GameCanvasProps {
   config: AppConfig;
@@ -65,10 +81,32 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   const [levelUpBanner, setLevelUpBanner] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const isFullscreenRef = useRef(false);
+  const [showInstructions, setShowInstructions] = useState(true);
+  const showInstructionsRef = useRef(true);
+
+  // Timer Bar State
+  const initialDuration = config.settings.gameDurationSeconds ?? 60;
+  const [timeRemaining, setTimeRemaining] = useState<number>(initialDuration);
+  const timeRemainingRef = useRef<number>(initialDuration);
+  const [gameOverReason, setGameOverReason] = useState<'CRASH' | 'TIME_EXPIRED'>('CRASH');
 
   useEffect(() => {
     isFullscreenRef.current = isFullscreen;
   }, [isFullscreen]);
+
+  useEffect(() => {
+    showInstructionsRef.current = showInstructions;
+  }, [showInstructions]);
+
+  useEffect(() => {
+    if (stateRef.current.gameState === 'READY') {
+      const dur = config.settings.gameDurationSeconds ?? 60;
+      stateRef.current.timeRemaining = dur;
+      stateRef.current.maxTime = dur;
+      timeRemainingRef.current = dur;
+      setTimeRemaining(dur);
+    }
+  }, [config.settings.gameDurationSeconds]);
 
   // Preloaded images
   const logoImgRef = useRef<HTMLImageElement | null>(null);
@@ -76,6 +114,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   const customCoinImgRef = useRef<HTMLImageElement | null>(null);
   const snitchImgRef = useRef<HTMLImageElement | null>(null);
   const castleBgImgRef = useRef<HTMLImageElement | null>(null);
+  const monsterImgRef = useRef<HTMLImageElement | null>(null);
 
   // Mutable Game Loop State
   const stateRef = useRef({
@@ -89,6 +128,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     cameraX: 0,
     coins: 0,
     level: 1,
+    timeRemaining: initialDuration,
+    maxTime: initialDuration,
+    gameOverReason: 'CRASH' as 'CRASH' | 'TIME_EXPIRED',
     nextMonsterDist: 500,
     nextCoinGroupDist: 220,
     monsters: [] as MonsterItem[],
@@ -151,7 +193,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     const castleImg = new Image();
     castleImg.src = '/src/assets/images/magic_castle_corridor_1792723808548.jpg';
     castleImg.onload = () => { castleBgImgRef.current = castleImg; };
-  }, [config, activeChar, activeCoin]);
+
+    // 5. Custom Monster Image
+    if (activeMonster.customImageDataUrl) {
+      const img = new Image();
+      img.src = activeMonster.customImageDataUrl;
+      img.onload = () => { monsterImgRef.current = img; };
+    } else {
+      monsterImgRef.current = null;
+    }
+  }, [config, activeChar, activeCoin, activeMonster]);
 
   // Audio background toggle sync
   useEffect(() => {
@@ -305,6 +356,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
 
   const handlePointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
+    if (showInstructionsRef.current) return;
     startThrust();
   };
 
@@ -316,7 +368,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   // Keyboard handlers (Space/W/Up to thrust, P to pause, F to toggle fullscreen, Esc to exit)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+      if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') {
+        if (showInstructionsRef.current) {
+          e.preventDefault();
+          setShowInstructions(false);
+          return;
+        }
         e.preventDefault();
         if (!stateRef.current.isThrusting) {
           startThrust();
@@ -327,6 +384,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       } else if (e.code === 'KeyP') {
         togglePause();
       } else if (e.code === 'Escape') {
+        if (showInstructionsRef.current) {
+          setShowInstructions(false);
+          return;
+        }
         if (isFullscreenRef.current) {
           toggleFullscreen();
         } else {
@@ -352,6 +413,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
 
   const resetToReady = () => {
     const h = stateRef.current.canvasHeight || 560;
+    const initialTime = config.settings.gameDurationSeconds ?? 60;
     stateRef.current.gameState = 'READY';
     stateRef.current.isThrusting = false;
     stateRef.current.playerX = 130;
@@ -361,6 +423,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     stateRef.current.hoverTimer = 0;
     stateRef.current.coins = 0;
     stateRef.current.level = 1;
+    stateRef.current.timeRemaining = initialTime;
+    stateRef.current.maxTime = initialTime;
+    stateRef.current.gameOverReason = 'CRASH';
     stateRef.current.monsters = [];
     stateRef.current.coinsList = [];
     stateRef.current.particles = [];
@@ -368,6 +433,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     stateRef.current.nextMonsterDist = stateRef.current.cameraX + 500;
     stateRef.current.nextCoinGroupDist = stateRef.current.cameraX + 220;
 
+    timeRemainingRef.current = initialTime;
+    setTimeRemaining(initialTime);
+    setGameOverReason('CRASH');
     setCoinsCollected(0);
     setCurrentLevel(1);
     setIsNewHighScore(false);
@@ -390,12 +458,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     }
   };
 
-  const triggerGameOver = () => {
+  const triggerGameOver = (reason: 'CRASH' | 'TIME_EXPIRED' = 'CRASH') => {
     stateRef.current.gameState = 'GAME_OVER';
+    stateRef.current.gameOverReason = reason;
     stateRef.current.isThrusting = false;
     sound.stopJetpack();
     sound.stopBgm();
     sound.playHit(config.settings.soundEnabled);
+    setGameOverReason(reason);
     setGameState('GAME_OVER');
 
     const finalCoins = stateRef.current.coins;
@@ -470,6 +540,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
           });
         }
       } else if (state.gameState === 'PLAYING') {
+        // Countdown flight timer bar
+        if (config.settings.enableTimer ?? true) {
+          state.timeRemaining -= dtMs / 1000;
+          const displaySecs = Math.max(0, Math.ceil(state.timeRemaining));
+          if (displaySecs !== timeRemainingRef.current) {
+            timeRemainingRef.current = displaySecs;
+            setTimeRemaining(displaySecs);
+          }
+
+          if (state.timeRemaining <= 0) {
+            state.timeRemaining = 0;
+            triggerGameOver('TIME_EXPIRED');
+            return;
+          }
+        }
+
         if (state.isThrusting) {
           state.playerVy -= config.settings.thrust * dt;
           if (state.playerVy < config.settings.maxRiseSpeed) {
@@ -528,12 +614,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         }
 
         // -------------------------------------------------------------
-        // SPAWN MONSTERS / HAZARDS
+        // SPAWN MONSTERS / HAZARDS (NO VERTICAL ZAPPERS IN ALL THEMES)
         // -------------------------------------------------------------
         if (state.cameraX >= state.nextMonsterDist) {
           const spawnY = ceilingY + 30 + Math.random() * (floorY - ceilingY - 70);
-          // In Harry Potter / Magic Academy theme, disable vertical zapper hazards completely
-          const isZapper = isMagicTheme ? false : Math.random() < 0.35;
 
           state.monsters.push({
             id: state.nextId++,
@@ -542,8 +626,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
             vy: (Math.random() - 0.5) * 1.5,
             radius: activeMonster.hitboxRadius,
             bobTimer: Math.random() * Math.PI * 2,
-            hazardType: isZapper ? 'zapper' : 'monster',
-            zapperHeight: isZapper ? Math.floor(65 + Math.random() * 40) : undefined,
+            hazardType: 'monster',
             passed: false,
           });
 
@@ -580,35 +663,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         // -------------------------------------------------------------
         for (let i = state.monsters.length - 1; i >= 0; i--) {
           const m = state.monsters[i];
-          if (isMagicTheme && m.hazardType === 'zapper') {
+          if (m.hazardType === 'zapper') {
             state.monsters.splice(i, 1);
             continue;
           }
           m.x -= baseScrollSpeed;
 
           m.bobTimer += 0.04 * dt;
-          if (m.hazardType === 'monster') {
-            m.y += Math.sin(m.bobTimer) * 1.2 * dt;
-          }
+          m.y += Math.sin(m.bobTimer) * 1.2 * dt;
 
           const hitRadius = playerRadius * 0.65;
-
-          if (m.hazardType === 'monster') {
-            const monsterCoreRadius = m.radius * 0.65;
-            const dist = Math.hypot(state.playerX - m.x, state.playerY - m.y);
-            if (dist < hitRadius + monsterCoreRadius) {
-              triggerGameOver();
-              return;
-            }
-          } else {
-            const zH = m.zapperHeight || 70;
-            const zHalf = zH / 2;
-            const inZapperX = Math.abs(state.playerX - m.x) < hitRadius + 8;
-            const inZapperY = state.playerY > m.y - zHalf && state.playerY < m.y + zHalf;
-            if (inZapperX && inZapperY) {
-              triggerGameOver();
-              return;
-            }
+          const monsterCoreRadius = m.radius * 0.65;
+          const dist = Math.hypot(state.playerX - m.x, state.playerY - m.y);
+          if (dist < hitRadius + monsterCoreRadius) {
+            triggerGameOver();
+            return;
           }
 
           if (m.x < -100) {
@@ -655,6 +724,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               alpha: 1,
               vy: -1.4,
             });
+
+            // Extra time on coin collection
+            if ((config.settings.enableTimer ?? true) && (config.settings.addTimeOnCoin ?? true)) {
+              const bonusSec = config.settings.timeBonusSeconds ?? 2;
+              state.timeRemaining += bonusSec;
+              if (state.timeRemaining > state.maxTime) {
+                state.maxTime = state.timeRemaining;
+              }
+              const displaySecs = Math.max(0, Math.ceil(state.timeRemaining));
+              timeRemainingRef.current = displaySecs;
+              setTimeRemaining(displaySecs);
+
+              state.floatingTexts.push({
+                x: coin.x,
+                y: coinY - 28,
+                text: `+${bonusSec}s TIME!`,
+                color: '#34d399',
+                alpha: 1,
+                vy: -1.8,
+              });
+            }
           }
 
           if (coin.collected || coin.x < -40) {
@@ -1002,6 +1092,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
 
             if (logoImgRef.current && logoImgRef.current.complete) {
               ctx.save();
+              // Crisp circular white backing for logo
+              ctx.fillStyle = '#ffffff';
+              ctx.beginPath();
+              ctx.arc(lx + logoSize / 2, ly + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
+              ctx.fill();
+
               ctx.beginPath();
               ctx.arc(lx + logoSize / 2, ly + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
               ctx.closePath();
@@ -1022,15 +1118,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               ctx.fillText('⚡', logoFrameX + frameW / 2, ly + 68);
             }
 
-            // Gilded Brass Plaque with Brand Name
-            ctx.fillStyle = '#fef08a';
-            ctx.font = 'bold 16px "Outfit", serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(config.branding.brandName || 'MAGIC ACADEMY', logoFrameX + frameW / 2, frameY + 152);
+            // Gilded Brass Plaque with Brand Name (if enabled)
+            const hasBrandName = config.branding.showBrandName !== false && Boolean(config.branding.brandName);
+            const hasTagline = config.branding.showTagline !== false && Boolean(config.branding.tagline);
 
-            ctx.fillStyle = '#f59e0b';
-            ctx.font = '700 10.5px "JetBrains Mono", monospace';
-            ctx.fillText(config.branding.tagline || 'HOUSE OF WONDERS', logoFrameX + frameW / 2, frameY + 175);
+            if (hasBrandName) {
+              ctx.fillStyle = '#fef08a';
+              ctx.font = 'bold 16px "Outfit", serif';
+              ctx.textAlign = 'center';
+              ctx.fillText(config.branding.brandName, logoFrameX + frameW / 2, frameY + (hasTagline ? 152 : 162));
+            }
+
+            if (hasTagline) {
+              ctx.fillStyle = '#f59e0b';
+              ctx.font = '700 10.5px "JetBrains Mono", monospace';
+              ctx.textAlign = 'center';
+              ctx.fillText(config.branding.tagline, logoFrameX + frameW / 2, frameY + (hasBrandName ? 175 : 162));
+            }
           }
 
           // 7. HOGWARTS HOUSE CREST 3: SLYTHERIN (at offset 1600)
@@ -1329,6 +1433,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
 
               if (logoImgRef.current && logoImgRef.current.complete) {
                 ctx.save();
+                // Crisp circular white backing for logo
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(lx + logoSize / 2, ly + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
+                ctx.fill();
+
                 ctx.beginPath();
                 ctx.arc(lx + logoSize / 2, ly + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
                 ctx.closePath();
@@ -1348,14 +1458,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                 ctx.fillText('⚡', boardX + boardW / 2, ly + 62);
               }
 
-              ctx.fillStyle = config.branding.billboardTextColor || '#ffffff';
-              ctx.font = 'bold 15px "Outfit", sans-serif';
-              ctx.textAlign = 'center';
-              ctx.fillText(config.branding.brandName || 'CYBERNETIX', boardX + boardW / 2, boardY + 138);
+              const hasCyberBrandName = config.branding.showBrandName !== false && Boolean(config.branding.brandName);
+              const hasCyberTagline = config.branding.showTagline !== false && Boolean(config.branding.tagline);
 
-              ctx.fillStyle = config.branding.neonColor;
-              ctx.font = '700 10px "JetBrains Mono", monospace';
-              ctx.fillText(config.branding.tagline || 'FUTURE TECH LABS', boardX + boardW / 2, boardY + 158);
+              if (hasCyberBrandName) {
+                ctx.fillStyle = config.branding.billboardTextColor || '#ffffff';
+                ctx.font = 'bold 15px "Outfit", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(config.branding.brandName, boardX + boardW / 2, boardY + (hasCyberTagline ? 138 : 148));
+              }
+
+              if (hasCyberTagline) {
+                ctx.fillStyle = config.branding.neonColor;
+                ctx.font = '700 10px "JetBrains Mono", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(config.branding.tagline, boardX + boardW / 2, boardY + (hasCyberBrandName ? 158 : 148));
+              }
             } else {
               ctx.fillStyle = skyline.frontBuildings;
               ctx.fillRect(bx, floorY - b.h, b.w, b.h);
@@ -1370,7 +1488,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       // DRAW HAZARDS / MONSTERS
       // -------------------------------------------------------------
       state.monsters.forEach((m) => {
-        if (isMagicTheme && m.hazardType === 'zapper') return;
+        if (m.hazardType === 'zapper') return;
         ctx.save();
         ctx.translate(m.x, m.y);
 
@@ -1378,7 +1496,35 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
           const r = m.radius;
           const mType = activeMonster.id;
 
-          if (mType === 'dementor') {
+          // Custom Monster Image if uploaded
+          if (monsterImgRef.current && monsterImgRef.current.complete) {
+            const size = r * 2.2;
+
+            // Menacing Outer Glow
+            ctx.shadowColor = activeMonster.hazardColor || '#ef4444';
+            ctx.shadowBlur = 12;
+
+            // Base circular backing
+            ctx.fillStyle = activeMonster.secondaryColor || '#0f172a';
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Threat warning rim
+            ctx.strokeStyle = activeMonster.hazardColor || '#ef4444';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Draw clipped custom image
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(0, 0, r - 1, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip();
+            ctx.drawImage(monsterImgRef.current, -size / 2, -size / 2, size, size);
+            ctx.restore();
+          } else if (mType === 'dementor') {
             // =========================================================
             // DEMENTOR PHANTOM (Chilling gliding hooded wraith with frost)
             // =========================================================
@@ -2121,65 +2267,402 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         }
       } else {
         // ==============================================================
-        // JETPACK AVIATOR FLIGHT
+        // FULL ARTICULATED CYBER JETPACK AVIATOR CHARACTER
+        // (Full-body pilot with articulated limbs, flight suit, flowing hair,
+        // glowing aerodynamic HUD visor, dual jetpack turbines, & animated plasma flames)
         // ==============================================================
-        const jpW = 12;
-        const jpH = 22;
-        ctx.fillStyle = activeChar.jetpackColor;
-        ctx.fillRect(-18, -jpH / 2 + 2, jpW, jpH);
+        const isGirl = activeChar.gender === 'girl';
+        const suitCol = activeChar.suitColor || '#1e293b';
+        const hairCol = activeChar.hairColor || '#00e5ff';
+        const visorCol = activeChar.visorColor || '#00f0ff';
+        const flameCol = activeChar.flameColor || '#00f0ff';
+        const jetpackCol = activeChar.jetpackColor || '#ff9900';
+        const scarfWave = Math.sin(time * 0.08) * 3.5;
+        const legSway = Math.sin(time * 0.04) * 1.5;
+
+        // 1. BILLOWING PILOT SCARF / ENERGY CAPELET (Trailing backward)
+        ctx.fillStyle = visorCol;
+        ctx.beginPath();
+        ctx.moveTo(-6, -10);
+        ctx.quadraticCurveTo(-18, -13 + scarfWave * 0.6, -34, -7 + scarfWave);
+        ctx.lineTo(-32, -1 + scarfWave);
+        ctx.quadraticCurveTo(-16, -5, -4, -6);
+        ctx.closePath();
+        ctx.fill();
+
+        // Scarf neon edge glow
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1;
-        ctx.strokeRect(-18, -jpH / 2 + 2, jpW, jpH);
+        ctx.beginPath();
+        ctx.moveTo(-34, -7 + scarfWave);
+        ctx.lineTo(-32, -1 + scarfWave);
+        ctx.stroke();
 
+        // 2. DUAL TURBO JETPACK (Mounted to pilot's back)
+        // Main Jetpack Chassis
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.roundRect(-24, -13, 16, 26, [4, 2, 2, 4]);
+        ctx.fill();
+        ctx.strokeStyle = jetpackCol;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Upper Thruster Cylinder
+        ctx.fillStyle = jetpackCol;
+        ctx.beginPath();
+        ctx.roundRect(-22, -11, 12, 10, 3);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Lower Thruster Cylinder
+        ctx.fillStyle = jetpackCol;
+        ctx.beginPath();
+        ctx.roundRect(-22, 1, 12, 10, 3);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Central Reactor Core Status Light (Pulsing energy cell)
+        const corePulse = 2.5 + Math.sin(time * 0.03) * 1;
+        ctx.fillStyle = visorCol;
+        ctx.shadowColor = visorCol;
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.arc(-16, 0, corePulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Twin Titanium Exhaust Nozzles (Angled slightly down-back)
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.moveTo(-24, -9);
+        ctx.lineTo(-27, -10);
+        ctx.lineTo(-27, -4);
+        ctx.lineTo(-24, -3);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(-24, 3);
+        ctx.lineTo(-27, 2);
+        ctx.lineTo(-27, 8);
+        ctx.lineTo(-24, 9);
+        ctx.closePath();
+        ctx.fill();
+
+        // 3. MULTI-STAGE ANIMATED PLASMA THRUSTER FLAMES
         if (state.isThrusting || state.gameState === 'READY') {
-          const flameLength = state.isThrusting ? 16 + Math.random() * 10 : 8 + Math.random() * 4;
-          ctx.fillStyle = activeChar.flameColor;
+          const flameLength = state.isThrusting ? 26 + Math.random() * 12 : 12 + Math.random() * 5;
+          const flameFlicker = (Math.random() - 0.5) * 4;
+
+          // Upper Thruster Plume
+          const gradTop = ctx.createLinearGradient(-27, -7, -27 - flameLength, -7);
+          gradTop.addColorStop(0, '#ffffff');
+          gradTop.addColorStop(0.3, flameCol);
+          gradTop.addColorStop(1, 'transparent');
+          ctx.fillStyle = gradTop;
           ctx.beginPath();
-          ctx.moveTo(-18, -2);
-          ctx.lineTo(-18 - flameLength, 5);
-          ctx.lineTo(-18, 12);
+          ctx.moveTo(-27, -10);
+          ctx.quadraticCurveTo(-27 - flameLength * 0.6, -7 + flameFlicker, -27 - flameLength, -7);
+          ctx.quadraticCurveTo(-27 - flameLength * 0.6, -7 - flameFlicker, -27, -4);
           ctx.closePath();
           ctx.fill();
 
+          // Lower Thruster Plume
+          const gradBottom = ctx.createLinearGradient(-27, 5, -27 - flameLength, 5);
+          gradBottom.addColorStop(0, '#ffffff');
+          gradBottom.addColorStop(0.3, flameCol);
+          gradBottom.addColorStop(1, 'transparent');
+          ctx.fillStyle = gradBottom;
+          ctx.beginPath();
+          ctx.moveTo(-27, 2);
+          ctx.quadraticCurveTo(-27 - flameLength * 0.6, 5 + flameFlicker, -27 - flameLength, 5);
+          ctx.quadraticCurveTo(-27 - flameLength * 0.6, 5 - flameFlicker, -27, 8);
+          ctx.closePath();
+          ctx.fill();
+
+          // Intense White Core Fire
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
-          ctx.moveTo(-18, 0);
-          ctx.lineTo(-18 - flameLength * 0.6, 5);
-          ctx.lineTo(-18, 10);
-          ctx.closePath();
+          ctx.moveTo(-27, -8);
+          ctx.lineTo(-27 - flameLength * 0.45, -7);
+          ctx.lineTo(-27, -6);
+          ctx.moveTo(-27, 3);
+          ctx.lineTo(-27 - flameLength * 0.45, 5);
+          ctx.lineTo(-27, 7);
           ctx.fill();
+
+          // Plasma Heat Spark Embers
+          if (state.isThrusting) {
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(-27 - Math.random() * flameLength, -7 + (Math.random() * 8 - 4), 1.5, 0, Math.PI * 2);
+            ctx.arc(-27 - Math.random() * flameLength, 5 + (Math.random() * 8 - 4), 1.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
 
-        if (charImgRef.current && charImgRef.current.complete) {
-          const pSize = 36;
+        // 4. PILOT'S ARTICULATED LEGS & MAGNETIC FLIGHT BOOTS (Aerodynamic pose)
+        // Rear Leg (Drawn behind for depth)
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.moveTo(-6, 9);
+        ctx.lineTo(-12, 17 + legSway); // Calf angled back
+        ctx.lineTo(-9, 19 + legSway);
+        ctx.lineTo(-2, 11);
+        ctx.closePath();
+        ctx.fill();
+
+        // Rear Boot
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.ellipse(-13, 20 + legSway, 5, 2.5, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Front Thigh & Knee (Tucked forward aerodynamically)
+        ctx.fillStyle = suitCol;
+        ctx.beginPath();
+        ctx.moveTo(-4, 7);
+        ctx.lineTo(4, 9); // Forward thigh
+        ctx.lineTo(1, 18); // Calf down-back
+        ctx.lineTo(-3, 16);
+        ctx.closePath();
+        ctx.fill();
+
+        // Front Armored Knee Plate
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.roundRect(2, 8, 4, 4, 1.5);
+        ctx.fill();
+        ctx.strokeStyle = visorCol;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Heavy Magnetic Flight Boot with Sole Glow
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.ellipse(3, 19, 6, 3, -0.25, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Boot Sole Thruster Stabilizer LED
+        ctx.fillStyle = visorCol;
+        ctx.beginPath();
+        ctx.fillRect(0, 20.5, 5, 1.5);
+
+        // 5. PILOT'S TORSO & HIGH-TECH FLIGHT SUIT
+        // Main Torso (Leaning forward ~15° into the wind)
+        ctx.fillStyle = suitCol;
+        ctx.beginPath();
+        ctx.moveTo(-8, 7);
+        ctx.lineTo(-6, -8);
+        ctx.lineTo(6, -9);
+        ctx.lineTo(10, 0);
+        ctx.lineTo(3, 8);
+        ctx.closePath();
+        ctx.fill();
+
+        // Biomechanical Chest Armor Plate
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.moveTo(-3, -7);
+        ctx.lineTo(5, -7);
+        ctx.lineTo(7, -1);
+        ctx.lineTo(-1, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = visorCol;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // If custom image uploaded, render as high-tech crest on pilot armor
+        if (charImgRef.current && charImgRef.current.complete && activeChar.customUploadedImage) {
           ctx.save();
           ctx.beginPath();
-          ctx.arc(0, 0, pSize / 2, 0, Math.PI * 2);
-          ctx.closePath();
+          ctx.arc(2, -4, 3.5, 0, Math.PI * 2);
           ctx.clip();
-          ctx.drawImage(charImgRef.current, -pSize / 2, -pSize / 2, pSize, pSize);
+          ctx.drawImage(charImgRef.current, -1.5, -7.5, 7, 7);
           ctx.restore();
-
-          ctx.strokeStyle = activeChar.visorColor;
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = visorCol;
+          ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.arc(0, 0, pSize / 2, 0, Math.PI * 2);
+          ctx.arc(2, -4, 3.5, 0, Math.PI * 2);
           ctx.stroke();
-        } else {
-          ctx.fillStyle = activeChar.hairColor;
+        }
+
+        // Flight Harness Straps (Holding the Jetpack)
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-7, -4);
+        ctx.lineTo(3, -5);
+        ctx.moveTo(-6, 3);
+        ctx.lineTo(2, 2);
+        ctx.stroke();
+
+        // 6. ARMS & DUAL THRUSTER STEERING HANDLES
+        // Rear Arm (Reaching back to throttle grip)
+        ctx.strokeStyle = suitCol;
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-4, -5);
+        ctx.lineTo(-10, -1);
+        ctx.lineTo(-12, 4);
+        ctx.stroke();
+
+        // Rear Arm Gauntlet Grip
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.arc(-12, 4, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Forward Arm (Extended gripping directional flight yoke)
+        ctx.strokeStyle = suitCol;
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(5, -5);
+        ctx.lineTo(12, -3);
+        ctx.lineTo(16, 2);
+        ctx.stroke();
+
+        // Tactical Flight Gauntlet
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.arc(16, 2, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Directional Flight Handle with Status LED
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(14, 0);
+        ctx.lineTo(18, 4);
+        ctx.stroke();
+
+        ctx.fillStyle = visorCol;
+        ctx.beginPath();
+        ctx.arc(18, 1, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 7. PILOT HEAD, REALISTIC FACE, HAIR & GLOWING HUD VISOR
+        // Neck & Chin
+        ctx.fillStyle = '#fed7aa';
+        ctx.beginPath();
+        ctx.moveTo(2, -8);
+        ctx.lineTo(8, -8);
+        ctx.lineTo(7, -5);
+        ctx.lineTo(3, -5);
+        ctx.closePath();
+        ctx.fill();
+
+        // Head Base
+        ctx.beginPath();
+        ctx.arc(6, -14, 6.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Determined Face Profile (Forehead, nose, jaw)
+        ctx.beginPath();
+        ctx.moveTo(8, -19);
+        ctx.lineTo(12, -15);
+        ctx.lineTo(12.5, -13);
+        ctx.lineTo(10, -10);
+        ctx.lineTo(6, -8);
+        ctx.closePath();
+        ctx.fill();
+
+        // Hairstyle: Girl vs Boy
+        if (isGirl) {
+          // Flowing dynamic hair streaming behind in the slipstream
+          ctx.fillStyle = hairCol;
           ctx.beginPath();
-          ctx.arc(0, -6, 14, 0, Math.PI * 2);
+          ctx.moveTo(6, -19);
+          ctx.quadraticCurveTo(-8, -20 + scarfWave * 0.5, -22, -12 + scarfWave);
+          ctx.lineTo(-18, -7 + scarfWave);
+          ctx.quadraticCurveTo(-6, -12, 3, -11);
+          ctx.closePath();
           ctx.fill();
 
-          ctx.fillStyle = activeChar.suitColor;
-          ctx.fillRect(-8, 3, 16, 16);
+          // Second flowing strand
+          ctx.beginPath();
+          ctx.moveTo(3, -17);
+          ctx.quadraticCurveTo(-10, -16 + scarfWave * 0.4, -26, -5 + scarfWave);
+          ctx.lineTo(-24, 0 + scarfWave);
+          ctx.quadraticCurveTo(-8, -8, 2, -10);
+          ctx.closePath();
+          ctx.fill();
 
-          ctx.fillStyle = activeChar.visorColor;
-          ctx.fillRect(0, -7, 12, 6);
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(0, -7, 12, 6);
+          // Front hair bangs framing visor
+          ctx.beginPath();
+          ctx.moveTo(5, -20);
+          ctx.lineTo(10, -18);
+          ctx.lineTo(8, -14);
+          ctx.lineTo(4, -16);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          // Spiky dynamic anime aviator hair swept backward
+          ctx.fillStyle = hairCol;
+          // Main crown hair
+          ctx.beginPath();
+          ctx.arc(5, -15, 7, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Spiky swept strands
+          ctx.beginPath();
+          ctx.moveTo(3, -20);
+          ctx.lineTo(-12, -22 + scarfWave * 0.3);
+          ctx.lineTo(-2, -16);
+          ctx.lineTo(-14, -16 + scarfWave * 0.3);
+          ctx.lineTo(0, -12);
+          ctx.lineTo(-10, -10 + scarfWave * 0.3);
+          ctx.lineTo(4, -10);
+          ctx.closePath();
+          ctx.fill();
         }
+
+        // Futuristic Curved HUD Flight Visor (Aerodynamic wraparound)
+        ctx.fillStyle = visorCol;
+        ctx.shadowColor = visorCol;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(7, -17);
+        ctx.lineTo(14, -15);
+        ctx.lineTo(12, -11);
+        ctx.lineTo(5, -12);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Visor Specular Glass Glint
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(8, -16);
+        ctx.lineTo(13, -14);
+        ctx.stroke();
+
+        // Holographic HUD scanline dot inside visor
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(11, -13, 1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Cyber Comms Earpiece
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.arc(4, -13, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = visorCol;
+        ctx.beginPath();
+        ctx.arc(4, -13, 0.8, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       ctx.restore();
@@ -2269,8 +2752,74 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
           </div>
         </div>
 
-        {/* Action Controls: Pause & Fullscreen */}
+        {/* Center Timer Bar */}
+        {(config.settings.enableTimer ?? true) && (
+          <div className="flex flex-col items-center max-w-[130px] sm:max-w-[200px] md:max-w-[240px] w-full pointer-events-auto px-1 sm:px-2">
+            <div
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 py-0.5 rounded-full backdrop-blur-md border shadow-md mb-1 transition-all ${
+                timeRemaining <= 10
+                  ? 'bg-rose-950/90 border-rose-500/70 shadow-rose-500/30 animate-pulse'
+                  : 'bg-slate-900/85 border-slate-700/60'
+              }`}
+            >
+              <Clock className={`w-3.5 h-3.5 ${timeRemaining <= 10 ? 'text-rose-400' : 'text-amber-400'}`} />
+              <span className="text-[10px] sm:text-xs font-bold text-slate-300 uppercase tracking-wider hidden xs:inline">Time</span>
+              <span
+                className={`text-xs sm:text-sm font-black font-mono-num ${
+                  timeRemaining <= 10 ? 'text-rose-300' : 'text-amber-300'
+                }`}
+              >
+                {Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}
+              </span>
+              {(config.settings.addTimeOnCoin ?? true) && (
+                <span className="text-[9px] font-bold text-emerald-400 hidden md:inline ml-0.5">
+                  (+{config.settings.timeBonusSeconds ?? 2}s/coin)
+                </span>
+              )}
+            </div>
+
+            {/* Depleting progress bar */}
+            <div className="w-full h-1.5 sm:h-2 rounded-full bg-slate-950/90 border border-slate-800 overflow-hidden shadow-inner p-0.5">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  timeRemaining <= 10
+                    ? 'bg-gradient-to-r from-rose-600 via-red-500 to-rose-400 animate-pulse'
+                    : timeRemaining <= 25
+                    ? 'bg-gradient-to-r from-amber-600 to-yellow-400'
+                    : isMagicTheme
+                    ? 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300'
+                    : 'bg-gradient-to-r from-cyan-500 via-blue-400 to-emerald-400'
+                }`}
+                style={{
+                  width: `${Math.max(
+                    0,
+                    Math.min(
+                      100,
+                      (timeRemaining / Math.max(stateRef.current.maxTime, config.settings.gameDurationSeconds ?? 60)) * 100
+                    )
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Action Controls: Help, Pause & Fullscreen */}
         <div className="flex items-center gap-2 pointer-events-auto">
+          {/* How to Play Guide Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowInstructions(true);
+            }}
+            className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 hover:bg-slate-800 text-amber-300 hover:text-white border border-slate-700/60 transition-colors shadow-md cursor-pointer flex items-center gap-1.5"
+            title="How to Play / Instructions"
+            aria-label="How to Play"
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-xs font-bold hidden md:inline">How to Play</span>
+          </button>
+
           {/* Pause Button */}
           {gameState === 'PLAYING' && (
             <button
@@ -2321,8 +2870,203 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         </div>
       )}
 
+      {/* HOW TO PLAY INSTRUCTIONS MODAL (COMPACT, NON-SCROLLABLE, HIGHLIGHTED OBJECTIVE AT TOP) */}
+      {showInstructions && (
+        <div
+          className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-hidden animate-fadeIn select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className={`relative max-w-md w-full rounded-2xl p-4 sm:p-5 shadow-2xl border flex flex-col justify-between max-h-[96%] overflow-hidden ${
+              isMagicTheme
+                ? 'bg-slate-950/95 border-amber-500/50 shadow-amber-500/25'
+                : 'bg-slate-950/95 border-cyan-500/40 shadow-cyan-500/25'
+            }`}
+          >
+            {/* Top Close 'X' button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowInstructions(false);
+              }}
+              className="absolute top-3.5 right-3.5 p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer border border-slate-800"
+              title="Close Guide & Hover"
+              aria-label="Close Guide"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Header Mini Bar */}
+            <div className="flex items-center gap-2 mb-2.5 pr-8">
+              <span className="text-xl shrink-0">{isMagicTheme ? '⚡' : '🚀'}</span>
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider leading-none">
+                  {isMagicTheme ? 'Hogwarts Flight Guide' : 'Pilot Flight Protocol'}
+                </h3>
+                <span className="text-[10px] text-slate-400 font-medium">Quick rules & controls</span>
+              </div>
+            </div>
+
+            {/* HIGHLIGHTED PRIMARY OBJECTIVE (AT THE TOP) */}
+            <div
+              className={`p-3 rounded-xl border mb-3 flex items-center gap-3 shadow-lg ${
+                isMagicTheme
+                  ? 'bg-gradient-to-r from-amber-950/70 via-amber-900/40 to-slate-900/90 border-amber-400/80 shadow-amber-500/20'
+                  : 'bg-gradient-to-r from-cyan-950/70 via-blue-900/40 to-slate-900/90 border-cyan-400/80 shadow-cyan-500/20'
+              }`}
+            >
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 shadow-md ${
+                  isMagicTheme ? 'bg-amber-400 text-slate-950' : 'bg-cyan-400 text-slate-950'
+                }`}
+              >
+                {isMagicTheme ? '⚡' : '🪙'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span
+                    className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded font-mono ${
+                      isMagicTheme ? 'bg-amber-400/20 text-amber-300' : 'bg-cyan-400/20 text-cyan-300'
+                    }`}
+                  >
+                    PRIMARY OBJECTIVE
+                  </span>
+                </div>
+                <h4 className="text-xs sm:text-sm font-black text-white leading-tight">
+                  {isMagicTheme ? 'Catch Golden Snitches!' : 'Collect As Many Coins As Possible!'}
+                </h4>
+                <p className="text-[10px] sm:text-[11px] text-slate-300 leading-snug mt-0.5">
+                  {isMagicTheme
+                    ? 'Collect snitches to score high points, speed up, and add extra seconds to your flight timer!'
+                    : 'Grab coins to maximize score, trigger level boosts, and extend your flight timer bar!'}
+                </p>
+              </div>
+            </div>
+
+            {/* 4 Rules Grid (2x2 Compact) */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {/* Rule 1: Fly / Lift */}
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 border border-slate-800 flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
+                    <ArrowUp className="w-3 h-3" /> Fly & Ascend
+                  </span>
+                  <span className="text-[8px] font-mono px-1 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+                    HOLD CLICK
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-tight">
+                  Click & hold mouse, tap screen, or hold Space to fly upward.
+                </p>
+              </div>
+
+              {/* Rule 2: Fall / Descend */}
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 border border-slate-800 flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-bold text-sky-400 flex items-center gap-1">
+                    <ArrowDown className="w-3 h-3" /> Glide & Fall
+                  </span>
+                  <span className="text-[8px] font-mono px-1 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-500/30">
+                    RELEASE
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-tight">
+                  Release click to fall smoothly. Feather taps to hover.
+                </p>
+              </div>
+
+              {/* Rule 3: Avoid Monster */}
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 border border-rose-500/40 flex items-center gap-2">
+                <div
+                  className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center border text-lg overflow-hidden relative"
+                  style={{
+                    backgroundColor: activeMonster.secondaryColor || '#1e1e2f',
+                    borderColor: activeMonster.hazardColor || '#ef4444',
+                  }}
+                >
+                  {activeMonster.customImageDataUrl ? (
+                    <img
+                      src={activeMonster.customImageDataUrl}
+                      alt={activeMonster.name}
+                      className="w-full h-full object-contain p-0.5"
+                    />
+                  ) : activeMonster.id === 'dementor' ? (
+                    '👻'
+                  ) : activeMonster.id === 'bludger' ? (
+                    '💣'
+                  ) : activeMonster.id === 'gargoyle' ? (
+                    '🦇'
+                  ) : activeMonster.id === 'drone' ? (
+                    '🛸'
+                  ) : activeMonster.id === 'mine' ? (
+                    '💥'
+                  ) : (
+                    '⚠️'
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] font-bold text-rose-300 block truncate">
+                    Avoid {activeMonster.name}
+                  </span>
+                  <p className="text-[9px] text-slate-400 leading-tight">
+                    Hit = instant crash. Steer clear!
+                  </p>
+                </div>
+              </div>
+
+              {/* Rule 4: Don't Let Character Fall */}
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 border border-amber-500/40 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center bg-amber-950/50 border border-amber-500/40 text-amber-400">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] font-bold text-amber-300 block">
+                    Do Not Fall or Crash
+                  </span>
+                  <p className="text-[9px] text-slate-400 leading-tight">
+                    Hitting ground or ceiling destroys flight.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Timer Note Banner */}
+            {(config.settings.enableTimer ?? true) && (
+              <div className="mb-3 px-2.5 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800 flex items-center justify-between text-[10px] text-slate-300">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="w-3 h-3 text-amber-400" />
+                  <span>
+                    Timer: <strong>{config.settings.gameDurationSeconds ?? 60}s</strong>
+                  </span>
+                </span>
+                {(config.settings.addTimeOnCoin ?? true) && (
+                  <span className="text-emerald-400 font-semibold font-mono">
+                    +{config.settings.timeBonusSeconds ?? 2}s added per coin!
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Clean Close Action: Enters floating READY state, NO auto-fly */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowInstructions(false);
+              }}
+              className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-2 ${
+                isMagicTheme
+                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                  : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
+              }`}
+            >
+              <span>Got It — Ready to Play</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* READY MODE PROMPT */}
-      {gameState === 'READY' && (
+      {gameState === 'READY' && !showInstructions && (
         <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none animate-pulse">
           <div className="bg-slate-950/85 backdrop-blur-md px-6 py-3 rounded-2xl border border-amber-400/50 shadow-2xl flex items-center gap-3 text-center">
             {isMagicTheme ? (
@@ -2373,7 +3117,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
             
             {/* PROMINENT BRAND LOGO IN FRAME */}
             <div 
-              className={`w-20 h-20 rounded-2xl overflow-hidden border-2 mb-3 bg-slate-950 flex items-center justify-center shadow-xl p-1 ${
+              className={`w-20 h-20 rounded-2xl overflow-hidden border-2 mb-3 bg-white flex items-center justify-center shadow-xl p-1.5 ${
                 isMagicTheme ? 'border-amber-400 ring-2 ring-amber-500/30' : ''
               }`}
               style={{ borderColor: isMagicTheme ? '#f59e0b' : config.branding.neonColor }}
@@ -2382,7 +3126,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                 <img
                   src={config.branding.customLogoDataUrl || config.branding.logoUrl}
                   alt="Brand Logo"
-                  className="w-full h-full object-cover rounded-xl"
+                  className="w-full h-full object-contain rounded-xl"
                   referrerPolicy="no-referrer"
                 />
               ) : (
@@ -2390,17 +3134,34 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               )}
             </div>
 
-            <div className="text-sm font-extrabold tracking-wider uppercase text-white mb-0.5">
-              {config.branding.brandName}
-            </div>
-            <div className="text-[11px] font-mono text-amber-400 mb-4">
-              {config.branding.tagline}
-            </div>
+            {config.branding.showBrandName !== false && Boolean(config.branding.brandName) && (
+              <div className="text-sm font-extrabold tracking-wider uppercase text-white mb-0.5">
+                {config.branding.brandName}
+              </div>
+            )}
+            {config.branding.showTagline !== false && Boolean(config.branding.tagline) && (
+              <div className="text-[11px] font-mono text-amber-400 mb-4">
+                {config.branding.tagline}
+              </div>
+            )}
+            {((config.branding.showBrandName === false || !config.branding.brandName) &&
+              (config.branding.showTagline === false || !config.branding.tagline)) && (
+              <div className="mb-2" />
+            )}
 
-            <div className="text-xs font-bold text-pink-400 uppercase tracking-widest mb-1">
-              Flight Terminated
+            <div className="text-xs font-bold text-pink-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+              {gameOverReason === 'TIME_EXPIRED' ? (
+                <span className="text-rose-400 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5" />
+                  Flight Time Expired
+                </span>
+              ) : (
+                <span>Flight Terminated</span>
+              )}
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-white mb-4">GAME OVER</h2>
+            <h2 className="text-2xl sm:text-3xl font-black text-white mb-4">
+              {gameOverReason === 'TIME_EXPIRED' ? "TIME'S UP!" : 'GAME OVER'}
+            </h2>
 
             {/* Score Card */}
             <div className="w-full bg-slate-950/80 border border-slate-800 rounded-2xl p-4 mb-5 flex items-center justify-around">

@@ -22,7 +22,8 @@ import {
   Check, 
   Sparkles,
   Wand2,
-  Gamepad2
+  Gamepad2,
+  Clock,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -150,6 +151,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
       }));
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleMonsterImageUpload = (monsterId: MonsterTypeId, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setFormData((prev) => ({
+        ...prev,
+        selectedMonsterId: monsterId,
+        monsterConfigs: {
+          ...prev.monsterConfigs,
+          [monsterId]: {
+            ...prev.monsterConfigs[monsterId],
+            customImageDataUrl: dataUrl,
+          },
+        },
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveMonsterImage = (monsterId: MonsterTypeId, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFormData((prev) => ({
+      ...prev,
+      monsterConfigs: {
+        ...prev.monsterConfigs,
+        [monsterId]: {
+          ...prev.monsterConfigs[monsterId],
+          customImageDataUrl: undefined,
+        },
+      },
+    }));
   };
 
   const filteredCharacters = formData.characters.filter((c) => {
@@ -601,24 +637,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                     <div className="absolute -bottom-3 -left-3 text-amber-400 text-lg">⚜</div>
                     <div className="absolute -bottom-3 -right-3 text-amber-400 text-lg">⚜</div>
 
-                    <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-amber-400 mb-3 bg-slate-950 flex items-center justify-center shadow-xl">
+                    <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-amber-400 mb-3 bg-white flex items-center justify-center shadow-xl p-1.5">
                       {formData.branding.customLogoDataUrl || formData.branding.logoUrl ? (
                         <img 
                           src={formData.branding.customLogoDataUrl || formData.branding.logoUrl} 
                           alt="Brand Logo" 
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain"
                           referrerPolicy="no-referrer"
                         />
                       ) : (
                         <span className="text-3xl font-bold text-amber-400">⚡</span>
                       )}
                     </div>
-                    <div className="text-base font-bold text-amber-200 uppercase tracking-widest mb-0.5">
-                      {formData.branding.brandName || 'MAGIC ACADEMY'}
-                    </div>
-                    <div className="text-xs font-mono text-amber-400">
-                      {formData.branding.tagline || 'HOUSE OF WONDERS'}
-                    </div>
+                    {formData.branding.showBrandName !== false && Boolean(formData.branding.brandName) && (
+                      <div className="text-base font-bold text-amber-200 uppercase tracking-widest mb-0.5">
+                        {formData.branding.brandName}
+                      </div>
+                    )}
+                    {formData.branding.showTagline !== false && Boolean(formData.branding.tagline) && (
+                      <div className="text-xs font-mono text-amber-400">
+                        {formData.branding.tagline}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   // CYBER THEME: NEON BILLBOARD
@@ -631,44 +671,66 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                     }}
                   >
                     <div 
-                      className="w-24 h-24 rounded-full overflow-hidden border-2 mb-3 bg-slate-900 flex items-center justify-center shadow-inner"
+                      className="w-24 h-24 rounded-full overflow-hidden border-2 mb-3 bg-white flex items-center justify-center shadow-inner p-1.5"
                       style={{ borderColor: formData.branding.neonColor }}
                     >
                       {formData.branding.customLogoDataUrl || formData.branding.logoUrl ? (
                         <img 
                           src={formData.branding.customLogoDataUrl || formData.branding.logoUrl} 
                           alt="Brand Logo" 
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain"
                           referrerPolicy="no-referrer"
                         />
                       ) : (
                         <span className="text-3xl font-bold text-cyan-400">⚡</span>
                       )}
                     </div>
-                    <div 
-                      className="text-base font-extrabold uppercase tracking-wider mb-0.5"
-                      style={{ color: formData.branding.billboardTextColor || '#ffffff' }}
-                    >
-                      {formData.branding.brandName || 'CYBERNETIX'}
-                    </div>
-                    <div 
-                      className="text-xs font-mono font-medium tracking-wide"
-                      style={{ color: formData.branding.neonColor }}
-                    >
-                      {formData.branding.tagline || 'FUTURE TECH LABS'}
-                    </div>
+                    {formData.branding.showBrandName !== false && Boolean(formData.branding.brandName) && (
+                      <div 
+                        className="text-base font-extrabold uppercase tracking-wider mb-0.5"
+                        style={{ color: formData.branding.billboardTextColor || '#ffffff' }}
+                      >
+                        {formData.branding.brandName}
+                      </div>
+                    )}
+                    {formData.branding.showTagline !== false && Boolean(formData.branding.tagline) && (
+                      <div 
+                        className="text-xs font-mono font-medium tracking-wide"
+                        style={{ color: formData.branding.neonColor }}
+                      >
+                        {formData.branding.tagline}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* Form Controls */}
+              {/* Form Controls with On/Off Options */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                    Brand Name / Inscription
-                  </label>
+                {/* Brand Name Control */}
+                <div className="bg-slate-800/40 border border-slate-700/60 p-4 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-200">
+                      Brand Name / Inscription
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-300 hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={formData.branding.showBrandName !== false}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            branding: { ...formData.branding, showBrandName: e.target.checked },
+                          })
+                        }
+                        className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-400 w-4 h-4 cursor-pointer accent-cyan-500"
+                      />
+                      <span>Show in Game</span>
+                    </label>
+                  </div>
                   <input
                     type="text"
+                    disabled={formData.branding.showBrandName === false}
                     value={formData.branding.brandName}
                     onChange={(e) =>
                       setFormData({
@@ -676,17 +738,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                         branding: { ...formData.branding, brandName: e.target.value },
                       })
                     }
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-cyan-400 transition-colors"
-                    placeholder="e.g. DATA BOOSTER"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-white focus:outline-none transition-colors ${
+                      formData.branding.showBrandName === false
+                        ? 'bg-slate-900/60 border-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                        : 'bg-slate-800 border-slate-700 focus:border-cyan-400'
+                    }`}
+                    placeholder="e.g. TIM"
                   />
+                  {formData.branding.showBrandName === false && (
+                    <p className="text-[11px] text-amber-400 font-medium">Brand name is disabled and hidden everywhere.</p>
+                  )}
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                    Tagline / Crest Motto
-                  </label>
+                {/* Tagline Control */}
+                <div className="bg-slate-800/40 border border-slate-700/60 p-4 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-200">
+                      Tagline / Motto
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-300 hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={formData.branding.showTagline !== false}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            branding: { ...formData.branding, showTagline: e.target.checked },
+                          })
+                        }
+                        className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-400 w-4 h-4 cursor-pointer accent-cyan-500"
+                      />
+                      <span>Show in Game</span>
+                    </label>
+                  </div>
                   <input
                     type="text"
+                    disabled={formData.branding.showTagline === false}
                     value={formData.branding.tagline}
                     onChange={(e) =>
                       setFormData({
@@ -694,9 +781,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                         branding: { ...formData.branding, tagline: e.target.value },
                       })
                     }
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-cyan-400 transition-colors"
-                    placeholder="e.g. EMPOWERING YOUR FLIGHT"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-white focus:outline-none transition-colors ${
+                      formData.branding.showTagline === false
+                        ? 'bg-slate-900/60 border-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                        : 'bg-slate-800 border-slate-700 focus:border-cyan-400'
+                    }`}
+                    placeholder="e.g. INNOVATION & TECHNOLOGY"
                   />
+                  {formData.branding.showTagline === false && (
+                    <p className="text-[11px] text-amber-400 font-medium">Tagline is disabled and hidden everywhere.</p>
+                  )}
                 </div>
 
                 <div className="sm:col-span-2">
@@ -822,9 +916,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                     >
                       <div>
                         {/* Visual Avatar Preview */}
-                        <div className={`w-16 h-16 mx-auto mb-3 rounded-2xl border-2 flex items-center justify-center text-3xl shadow-lg transition-transform ${iconBg} ${iconBorder} ${isSelected ? 'scale-105' : ''}`}>
-                          {symbol}
-                        </div>
+                        {monster.customImageDataUrl ? (
+                          <div className={`w-16 h-16 mx-auto mb-3 rounded-2xl border-2 overflow-hidden flex items-center justify-center shadow-lg transition-transform bg-slate-950 ${iconBorder} ${isSelected ? 'scale-105' : ''}`}>
+                            <img
+                              src={monster.customImageDataUrl}
+                              alt={monster.name}
+                              className="w-full h-full object-contain p-1"
+                            />
+                          </div>
+                        ) : (
+                          <div className={`w-16 h-16 mx-auto mb-3 rounded-2xl border-2 flex items-center justify-center text-3xl shadow-lg transition-transform ${iconBg} ${iconBorder} ${isSelected ? 'scale-105' : ''}`}>
+                            {symbol}
+                          </div>
+                        )}
 
                         <div className="flex items-center justify-between mb-1.5">
                           <span className="text-sm font-bold text-white">{monster.name}</span>
@@ -834,16 +938,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-400 leading-relaxed mb-4">{monster.tagline}</p>
+                        <p className="text-xs text-slate-400 leading-relaxed mb-3">{monster.tagline}</p>
                       </div>
 
-                      <div className="pt-3 border-t border-slate-700/50 flex items-center justify-between text-xs">
-                        <span className="text-slate-400 font-mono text-[11px] uppercase">
-                          {monster.behavior}
-                        </span>
-                        <span className={`font-bold ${isSelected ? 'text-rose-400' : 'text-slate-500'}`}>
-                          {isSelected ? '✓ Equipped' : 'Click to Equip'}
-                        </span>
+                      {/* Custom Monster Image Option */}
+                      <div className="pt-3 border-t border-slate-700/50 space-y-2" onClick={(e) => e.stopPropagation()}>
+                        <label className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/70 text-[11px] font-semibold text-slate-200 cursor-pointer transition-colors">
+                          <Upload className="w-3 h-3 text-rose-400" />
+                          <span>{monster.customImageDataUrl ? 'Change Image' : 'Upload Image'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleMonsterImageUpload(monster.id, e)}
+                            className="hidden"
+                          />
+                        </label>
+                        {monster.customImageDataUrl && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemoveMonsterImage(monster.id, e)}
+                            className="w-full text-center text-[10px] text-rose-400 hover:text-rose-300 hover:underline cursor-pointer py-0.5"
+                          >
+                            Remove Custom Image
+                          </button>
+                        )}
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <span className="text-slate-400 font-mono text-[10px] uppercase">
+                            {monster.behavior}
+                          </span>
+                          <span className={`font-bold text-[11px] ${isSelected ? 'text-rose-400' : 'text-slate-500'}`}>
+                            {isSelected ? '✓ Equipped' : 'Click to Equip'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1037,16 +1163,142 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
             </div>
           )}
 
-          {/* 7. PHYSICS */}
+          {/* 7. PHYSICS & TIMER */}
           {activeTab === 'physics' && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-xl font-bold text-white mb-1">Flight Physics</h2>
+                <h2 className="text-xl font-bold text-white mb-1">Flight Physics & Timer Bar</h2>
                 <p className="text-xs text-slate-400">
-                  Calibrate upward flight thrust, descent gravity, and speed.
+                  Calibrate flight controls, countdown timer duration, and coin time bonuses.
                 </p>
               </div>
 
+              {/* Timer Bar Settings */}
+              <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Clock className="w-5 h-5 text-amber-400" />
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Flight Countdown Timer</h3>
+                      <p className="text-xs text-slate-400">
+                        Limits game duration. Character expires when the timer bar reaches zero.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.settings.enableTimer ?? true}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          settings: { ...formData.settings, enableTimer: e.target.checked },
+                        })
+                      }
+                      className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400 bg-slate-800 border-slate-700"
+                    />
+                    <span className="text-xs font-semibold text-slate-300">Enable Timer</span>
+                  </label>
+                </div>
+
+                {(formData.settings.enableTimer ?? true) && (
+                  <div className="space-y-4 pt-3 border-t border-slate-800">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-slate-200">
+                          Total Game Flight Time (Seconds)
+                        </label>
+                        <span className="text-xs font-bold font-mono text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30">
+                          {formData.settings.gameDurationSeconds ?? 60}s ({Math.floor((formData.settings.gameDurationSeconds ?? 60) / 60)}m {(formData.settings.gameDurationSeconds ?? 60) % 60}s)
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="15"
+                        max="300"
+                        step="5"
+                        value={formData.settings.gameDurationSeconds ?? 60}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            settings: { ...formData.settings, gameDurationSeconds: parseInt(e.target.value, 10) },
+                          })
+                        }
+                        className="w-full accent-amber-400"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
+                        <span>15s (Short Blitz)</span>
+                        <span>60s (Default)</span>
+                        <span>120s (2 mins)</span>
+                        <span>300s (5 mins)</span>
+                      </div>
+                    </div>
+
+                    {/* Add Time on Coin Collect */}
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">
+                            Add Extra Time on Coin / Snitch Collection
+                          </span>
+                          <span className="text-[11px] text-slate-400">
+                            Extends the countdown timer bar whenever the player collects a coin or snitch.
+                          </span>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.settings.addTimeOnCoin ?? true}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                settings: { ...formData.settings, addTimeOnCoin: e.target.checked },
+                              })
+                            }
+                            className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 bg-slate-800 border-slate-700"
+                          />
+                          <span className="text-xs font-semibold text-slate-300">Active</span>
+                        </label>
+                      </div>
+
+                      {(formData.settings.addTimeOnCoin ?? true) && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-semibold text-slate-300">
+                              Time Added Per Coin / Snitch
+                            </label>
+                            <span className="text-xs font-bold font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                              +{formData.settings.timeBonusSeconds ?? 2} seconds
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="10"
+                            step="1"
+                            value={formData.settings.timeBonusSeconds ?? 2}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                settings: { ...formData.settings, timeBonusSeconds: parseInt(e.target.value, 10) },
+                              })
+                            }
+                            className="w-full accent-emerald-400"
+                          />
+                          <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
+                            <span>+1s</span>
+                            <span>+2s (Default)</span>
+                            <span>+5s</span>
+                            <span>+10s</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Thrust & Gravity Physics */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/60">
                   <label className="text-xs font-semibold text-slate-200 block mb-1">
