@@ -91,6 +91,9 @@ export interface GameSettings {
   enableTimer: boolean; // default true
   addTimeOnCoin: boolean; // default true (add bonus time on coin collection)
   timeBonusSeconds: number; // default 2 (seconds added per coin collected)
+  requireRegistration: boolean; // Pre-game login / attendee registration toggle
+  activeEventId: string; // ID of active event to save registers to
+  activeEventName: string; // Name of active event
 }
 
 export interface AppConfig {
@@ -115,4 +118,28 @@ export interface ScoreEntry {
   coins: number;
   level: number;
   date: string;
+}
+
+export interface AttendeeRegistration {
+  id: string;
+  eventId: string;
+  name: string;
+  company: string;
+  email: string;
+  contactNumber: string;
+  position: string;
+  registeredAt: string;
+  bestScore: number;
+  coins: number;
+  totalRuns: number;
+  lastPlayedAt?: string;
+}
+
+export interface EventSession {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  createdAt: string;
+  isActive: boolean;
 }

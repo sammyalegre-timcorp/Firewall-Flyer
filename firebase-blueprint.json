@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "Event": {
+      "title": "Event",
+      "description": "Event session record for grouping registrations and scores",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "code": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "AttendeeRegistration": {
+      "title": "AttendeeRegistration",
+      "description": "Attendee check-in and game score record per event",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "eventId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 150 },
+        "company": { "type": "string", "maxLength": 150 },
+        "email": { "type": "string", "maxLength": 150 },
+        "contactNumber": { "type": "string", "maxLength": 50 },
+        "position": { "type": "string", "maxLength": 150 },
+        "registeredAt": { "type": "string", "maxLength": 64 },
+        "bestScore": { "type": "number" },
+        "coins": { "type": "number" },
+        "totalRuns": { "type": "number" },
+        "lastPlayedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "eventId", "name", "email", "registeredAt"]
+    },
+    "ScoreEntry": {
+      "title": "ScoreEntry",
+      "description": "Game leaderboard score entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "playerName": { "type": "string", "maxLength": 150 },
+        "characterName": { "type": "string", "maxLength": 100 },
+        "score": { "type": "number" },
+        "coins": { "type": "number" },
+        "level": { "type": "number" },
+        "date": { "type": "string", "maxLength": 64 },
+        "eventId": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["id", "playerName", "score", "coins", "date"]
+    }
+  },
+  "firestore": {
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/Event" },
+      "description": "Configured event sessions"
+    },
+    "/events/{eventId}/attendees/{attendeeId}": {
+      "schema": { "$ref": "#/entities/AttendeeRegistration" },
+      "description": "Attendees registered for a specific event with scores"
+    },
+    "/scores/{scoreId}": {
+      "schema": { "$ref": "#/entities/ScoreEntry" },
+      "description": "Global and event score log entries"
+    }
+  }
+}

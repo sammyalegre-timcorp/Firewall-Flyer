@@ -14,11 +14,24 @@ import {
   ArrowUp,
   ArrowDown,
   ShieldAlert,
-  AlertTriangle,
   Flame,
   X,
   Clock,
+  User,
+  Building,
+  Mail,
+  Phone,
+  Briefcase,
+  UserCheck,
+  LogOut,
 } from 'lucide-react';
+import { AttendeeRegistration } from '../types/game';
+import {
+  getCurrentSessionAttendee,
+  saveRegistration,
+  updateAttendeeScore,
+  clearCurrentSessionAttendee,
+} from '../utils/eventStorage';
 
 interface GameCanvasProps {
   config: AppConfig;
@@ -90,6 +103,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   const timeRemainingRef = useRef<number>(initialDuration);
   const [gameOverReason, setGameOverReason] = useState<'CRASH' | 'TIME_EXPIRED'>('CRASH');
 
+  // Attendee / Pre-game Login State
+  const [currentAttendee, setCurrentAttendee] = useState<AttendeeRegistration | null>(() =>
+    getCurrentSessionAttendee()
+  );
+  const [showRegistration, setShowRegistration] = useState<boolean>(() => {
+    return Boolean((config.settings.requireRegistration ?? true) && !getCurrentSessionAttendee());
+  });
+  const showRegistrationRef = useRef(showRegistration);
+
+  // Form Fields
+  const [regName, setRegName] = useState('');
+  const [regCompany, setRegCompany] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regContactNumber, setRegContactNumber] = useState('');
+  const [regPosition, setRegPosition] = useState('');
+  const [regError, setRegError] = useState<string | null>(null);
+
   useEffect(() => {
     isFullscreenRef.current = isFullscreen;
   }, [isFullscreen]);
@@ -97,6 +127,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   useEffect(() => {
     showInstructionsRef.current = showInstructions;
   }, [showInstructions]);
+
+  useEffect(() => {
+    showRegistrationRef.current = showRegistration;
+  }, [showRegistration]);
+
+  useEffect(() => {
+    if ((config.settings.requireRegistration ?? true) && !getCurrentSessionAttendee()) {
+      setShowRegistration(true);
+    } else if (config.settings.requireRegistration === false) {
+      setShowRegistration(false);
+    }
+  }, [config.settings.requireRegistration]);
 
   useEffect(() => {
     if (stateRef.current.gameState === 'READY') {
@@ -355,12 +397,44 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   }, []);
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    // If registration or instructions modal is active, or user is clicking form elements, let browser handle naturally
+    const target = e.target as HTMLElement | null;
+    if (
+      showRegistrationRef.current ||
+      showInstructionsRef.current ||
+      (target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'BUTTON' ||
+          target.tagName === 'SELECT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'LABEL' ||
+          target.closest('form') ||
+          target.closest('input')))
+    ) {
+      return;
+    }
+
     e.preventDefault();
-    if (showInstructionsRef.current) return;
     startThrust();
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (
+      showRegistrationRef.current ||
+      showInstructionsRef.current ||
+      (target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'BUTTON' ||
+          target.tagName === 'SELECT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'LABEL' ||
+          target.closest('form') ||
+          target.closest('input')))
+    ) {
+      return;
+    }
+
     e.preventDefault();
     stopThrust();
   };
@@ -368,6 +442,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   // Keyboard handlers (Space/W/Up to thrust, P to pause, F to toggle fullscreen, Esc to exit)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Never intercept keystrokes when typing into an input, textarea, or registration modal
+      const target = e.target as HTMLElement | null;
+      if (
+        showRegistrationRef.current ||
+        (target &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable))
+      ) {
+        return;
+      }
+
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') {
         if (showInstructionsRef.current) {
           e.preventDefault();
@@ -397,6 +484,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        showRegistrationRef.current ||
+        (target &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable))
+      ) {
+        return;
+      }
+
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
         e.preventDefault();
         stopThrust();
@@ -469,6 +568,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     setGameState('GAME_OVER');
 
     const finalCoins = stateRef.current.coins;
+
+    // Persist and tag score to registered attendee in event file
+    if (currentAttendee) {
+      const updated = updateAttendeeScore(currentAttendee.id, finalCoins);
+      if (updated) {
+        setCurrentAttendee(updated);
+      }
+    }
 
     if (finalCoins > highScore) {
       setIsNewHighScore(true);
@@ -2870,6 +2977,207 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         </div>
       )}
 
+      {/* ATTENDEE LOGIN / REGISTRATION MODAL (COMPACT, NON-SCROLLABLE, ALL FIELDS VISIBLE AT ONCE) */}
+      {showRegistration && (config.settings.requireRegistration ?? true) && (
+        <div
+          className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-hidden animate-fadeIn select-text cursor-default pointer-events-auto"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className={`relative max-w-md w-full rounded-3xl p-5 sm:p-6 shadow-2xl border flex flex-col justify-between max-h-[96%] overflow-hidden select-text cursor-default pointer-events-auto ${
+              isMagicTheme
+                ? 'bg-slate-950/95 border-amber-500/50 shadow-amber-500/25'
+                : 'bg-slate-950/95 border-purple-500/50 shadow-purple-500/25'
+            }`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header / Event Name Tag */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/30">
+                  {config.settings.activeEventName || 'Event Check-In'}
+                </span>
+                <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Official Register</span>
+                </span>
+              </div>
+
+              <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-wider leading-tight">
+                {isMagicTheme ? 'Magic Academy Check-In' : 'Pilot Registration & Check-In'}
+              </h3>
+              <p className="text-[11px] text-slate-400 leading-tight mt-0.5 mb-3.5">
+                Fill in your details below to save your flight run & tournament scores for this event.
+              </p>
+            </div>
+
+            {/* Non-Scrollable Form Grid */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!regName.trim() || !regEmail.trim()) {
+                  setRegError('Please provide your name and email address.');
+                  return;
+                }
+                setRegError(null);
+                const reg = saveRegistration({
+                  name: regName.trim(),
+                  company: regCompany.trim() || 'Attendee',
+                  email: regEmail.trim(),
+                  contactNumber: regContactNumber.trim() || '—',
+                  position: regPosition.trim() || 'Guest',
+                  eventId: config.settings.activeEventId,
+                });
+                setCurrentAttendee(reg);
+                setShowRegistration(false);
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+              onKeyUp={(e) => e.stopPropagation()}
+              className="space-y-2.5 mb-1 select-text"
+            >
+              {regError && (
+                <div className="text-[11px] text-rose-300 bg-rose-950/60 border border-rose-500/40 rounded-lg px-2.5 py-1">
+                  {regError}
+                </div>
+              )}
+
+              {/* Row 1: Name & Position */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                    <User className="w-3 h-3 text-cyan-400" />
+                    <span>Full Name *</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    placeholder="e.g. Alex Morgan"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onKeyUp={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                    <Briefcase className="w-3 h-3 text-cyan-400" />
+                    <span>Position</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. IT Specialist"
+                    value={regPosition}
+                    onChange={(e) => setRegPosition(e.target.value)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onKeyUp={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Company & Contact Number */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                    <Building className="w-3 h-3 text-cyan-400" />
+                    <span>Company</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. TIM Corporation"
+                    value={regCompany}
+                    onChange={(e) => setRegCompany(e.target.value)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onKeyUp={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                    <Phone className="w-3 h-3 text-cyan-400" />
+                    <span>Contact Number</span>
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. +63 912 345 6789"
+                    value={regContactNumber}
+                    onChange={(e) => setRegContactNumber(e.target.value)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onKeyUp={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors font-mono cursor-text select-text pointer-events-auto"
+                  />
+                </div>
+              </div>
+
+              {/* Row 3: Email */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                  <Mail className="w-3 h-3 text-cyan-400" />
+                  <span>Email Address *</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. alex.morgan@company.com"
+                  value={regEmail}
+                  onChange={(e) => setRegEmail(e.target.value)}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onKeyUp={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
+                />
+              </div>
+
+              {/* Submit Action */}
+              <button
+                type="submit"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                className={`w-full mt-3 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 transform hover:-translate-y-0.5 ${
+                  isMagicTheme
+                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-amber-500/20'
+                    : 'bg-gradient-to-r from-cyan-400 via-sky-400 to-purple-500 hover:from-cyan-300 hover:to-purple-400 text-slate-950 shadow-cyan-500/20'
+                }`}
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Confirm Check-In & Enter Flight</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* HOW TO PLAY INSTRUCTIONS MODAL (COMPACT, NON-SCROLLABLE, HIGHLIGHTED OBJECTIVE AT TOP) */}
       {showInstructions && (
         <div
@@ -3065,6 +3373,38 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         </div>
       )}
 
+      {/* REGISTERED PILOT STATUS CHIP (READY MODE) */}
+      {gameState === 'READY' && !showRegistration && currentAttendee && (config.settings.requireRegistration ?? true) && (
+        <div className="absolute top-14 left-4 z-30 animate-fadeIn pointer-events-auto">
+          <div className="bg-slate-950/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-purple-500/40 shadow-xl flex items-center gap-2.5 text-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+            <div className="flex items-center gap-1.5 text-[11px] leading-tight">
+              <span className="text-slate-400">Pilot:</span>
+              <strong className="text-white font-semibold">{currentAttendee.name}</strong>
+              {currentAttendee.company && (
+                <span className="text-purple-300 hidden sm:inline">({currentAttendee.company})</span>
+              )}
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                clearCurrentSessionAttendee();
+                setCurrentAttendee(null);
+                setRegName('');
+                setRegCompany('');
+                setRegEmail('');
+                setRegContactNumber('');
+                setRegPosition('');
+                setShowRegistration(true);
+              }}
+              className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 ml-1 underline cursor-pointer"
+            >
+              Switch
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* READY MODE PROMPT */}
       {gameState === 'READY' && !showInstructions && (
         <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none animate-pulse">
@@ -3159,9 +3499,46 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                 <span>Flight Terminated</span>
               )}
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-white mb-4">
+            <h2 className="text-2xl sm:text-3xl font-black text-white mb-3">
               {gameOverReason === 'TIME_EXPIRED' ? "TIME'S UP!" : 'GAME OVER'}
             </h2>
+
+            {/* REGISTERED ATTENDEE RUN SUMMARY */}
+            {currentAttendee && (config.settings.requireRegistration ?? true) && (
+              <div className="w-full bg-purple-950/40 border border-purple-500/30 rounded-2xl p-2.5 mb-3.5 text-left flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] font-mono font-bold text-purple-300 block uppercase tracking-wider">
+                    Official Event Record
+                  </span>
+                  <div className="text-xs font-bold text-white truncate max-w-[190px]">
+                    {currentAttendee.name}
+                    {currentAttendee.company && (
+                      <span className="text-slate-400 font-normal"> &bull; {currentAttendee.company}</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearCurrentSessionAttendee();
+                    setCurrentAttendee(null);
+                    setRegName('');
+                    setRegCompany('');
+                    setRegEmail('');
+                    setRegContactNumber('');
+                    setRegPosition('');
+                    setShowRegistration(true);
+                    resetToReady();
+                  }}
+                  className="px-2 py-1 rounded-lg bg-purple-900/70 hover:bg-purple-800 text-[10px] font-bold text-purple-200 border border-purple-500/40 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                  title="Register next attendee"
+                >
+                  <LogOut className="w-3 h-3" />
+                  <span>Next Pilot</span>
+                </button>
+              </div>
+            )}
 
             {/* Score Card */}
             <div className="w-full bg-slate-950/80 border border-slate-800 rounded-2xl p-4 mb-5 flex items-center justify-around">

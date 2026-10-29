@@ -429,11 +429,14 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     enableTimer: true,
     addTimeOnCoin: true,
     timeBonusSeconds: 2,
+    requireRegistration: true,
+    activeEventId: 'tim_summit_2026',
+    activeEventName: 'TIM Technology Summit 2026',
   },
 };
 
-const STORAGE_KEY = 'neon_glide_config_v7';
-const PREV_STORAGE_KEY = 'neon_glide_config_v6';
+const STORAGE_KEY = 'neon_glide_config_v8';
+const PREV_STORAGE_KEY = 'neon_glide_config_v7';
 const SCORES_KEY = 'neon_glide_highscores_v6';
 
 export function loadAppConfig(): AppConfig {
@@ -484,6 +487,9 @@ export function loadAppConfig(): AppConfig {
         enableTimer: parsed.settings?.enableTimer ?? true,
         addTimeOnCoin: parsed.settings?.addTimeOnCoin ?? true,
         timeBonusSeconds: parsed.settings?.timeBonusSeconds ?? 2,
+        requireRegistration: parsed.settings?.requireRegistration !== undefined ? parsed.settings.requireRegistration : true,
+        activeEventId: parsed.settings?.activeEventId || 'tim_summit_2026',
+        activeEventName: parsed.settings?.activeEventName || 'TIM Technology Summit 2026',
       },
       customSkyline: { ...DEFAULT_APP_CONFIG.customSkyline, ...(parsed.customSkyline || {}) },
       characters: parsed.characters && parsed.characters.length === 6 ? parsed.characters : fallbackChars,

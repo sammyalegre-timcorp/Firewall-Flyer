@@ -1,0 +1,40 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Events collection
+    match /events/{eventId} {
+      allow read: if isValidId(eventId);
+      allow write: if isValidId(eventId)
+        && request.resource.data.name is string && request.resource.data.name.size() <= 200;
+
+      // Event attendees subcollection
+      match /attendees/{attendeeId} {
+        allow read: if isValidId(eventId) && isValidId(attendeeId);
+        allow create, update: if isValidId(eventId) && isValidId(attendeeId)
+          && request.resource.data.name is string && request.resource.data.name.size() <= 150
+          && request.resource.data.email is string && request.resource.data.email.size() <= 150;
+        allow delete: if isValidId(eventId) && isValidId(attendeeId);
+      }
+    }
+
+    // Scores collection
+    match /scores/{scoreId} {
+      allow read: if isValidId(scoreId);
+      allow create, update: if isValidId(scoreId)
+        && request.resource.data.playerName is string && request.resource.data.playerName.size() <= 150
+        && request.resource.data.score is number;
+      allow delete: if isValidId(scoreId);
+    }
+  }
+}

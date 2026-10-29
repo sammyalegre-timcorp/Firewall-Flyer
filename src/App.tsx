@@ -74,7 +74,7 @@ export default function App() {
 
   // The main page is strictly the game (no header, no pilot selector, no sponsor card, no highscores, no admin links)
   return (
-    <div className="relative min-h-screen w-full bg-[#04060f] flex flex-col items-center justify-center p-0 sm:p-4 overflow-hidden select-none">
+    <div className="relative min-h-screen w-full bg-[#04060f] flex flex-col items-center justify-center p-0 sm:p-4 overflow-hidden">
       
       {/* Offline Mode Status Banner (Non-intrusive floating indicator) */}
       {!isOnline && (
