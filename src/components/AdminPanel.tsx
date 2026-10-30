@@ -1649,6 +1649,148 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                 </div>
               </div>
 
+              {/* 3. Popups Customization: Title, Subtitle, and Footer Tagline */}
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-700/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-amber-400" />
+                    <div>
+                      <h3 className="text-sm font-bold text-white">
+                        Popups Customization (Instructions & Registration)
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        Customize the titles, subtitles, and footer branding displayed on both modals.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Registration Popup Titles */}
+                  <div className="space-y-3 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+                    <span className="text-xs font-bold text-purple-300 block uppercase tracking-wider flex items-center gap-1.5">
+                      <UserCheck className="w-4 h-4 text-purple-400" />
+                      Registration Pop Up
+                    </span>
+                    <div>
+                      <label className="text-[11px] font-medium text-slate-300 block mb-1">
+                        Modal Title
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Pilot Registration & Check-In"
+                        value={formData.settings.registrationTitle ?? ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            settings: {
+                              ...formData.settings,
+                              registrationTitle: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full bg-slate-950 border border-slate-700 focus:border-purple-400 rounded-lg px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-medium text-slate-300 block mb-1">
+                        Modal Subtitle
+                      </label>
+                      <textarea
+                        rows={2}
+                        placeholder="Fill in your details below to save your flight run & tournament scores for this event."
+                        value={formData.settings.registrationSubtitle ?? ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            settings: {
+                              ...formData.settings,
+                              registrationSubtitle: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full bg-slate-950 border border-slate-700 focus:border-purple-400 rounded-lg px-3 py-2 text-xs text-white resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Instructions Popup Titles */}
+                  <div className="space-y-3 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+                    <span className="text-xs font-bold text-cyan-300 block uppercase tracking-wider flex items-center gap-1.5">
+                      <Gamepad2 className="w-4 h-4 text-cyan-400" />
+                      Instructions Pop Up
+                    </span>
+                    <div>
+                      <label className="text-[11px] font-medium text-slate-300 block mb-1">
+                        Modal Title
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Pilot Flight Protocol"
+                        value={formData.settings.instructionsTitle ?? ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            settings: {
+                              ...formData.settings,
+                              instructionsTitle: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded-lg px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-medium text-slate-300 block mb-1">
+                        Modal Subtitle
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Flight rules & mission controls"
+                        value={formData.settings.instructionsSubtitle ?? ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            settings: {
+                              ...formData.settings,
+                              instructionsSubtitle: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded-lg px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Tagline for both popups */}
+                <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-amber-300 block mb-0.5">
+                      Bottom Footer Tagline (Both Popups)
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      Appears at the very bottom of both the Registration and Instructions modals.
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Presented by TIM"
+                    value={formData.settings.popupFooterText ?? 'Presented by TIM'}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        settings: {
+                          ...formData.settings,
+                          popupFooterText: e.target.value,
+                        },
+                      })
+                    }
+                    className="w-full sm:max-w-xs bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white font-semibold"
+                  />
+                </div>
+              </div>
+
               {/* Event Statistics & Export Bar */}
               <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-6">

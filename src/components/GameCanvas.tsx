@@ -3045,10 +3045,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               </div>
 
               <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-wider leading-tight">
-                {isMagicTheme ? 'Magic Academy Check-In' : 'Pilot Registration & Check-In'}
+                {config.settings.registrationTitle || (isMagicTheme ? 'Magic Academy Check-In' : 'Pilot Registration & Check-In')}
               </h3>
               <p className="text-[11px] text-slate-400 leading-tight mt-0.5 mb-3.5">
-                Fill in your details below to save your flight run & tournament scores for this event.
+                {config.settings.registrationSubtitle || 'Fill in your details below to save your flight run & tournament scores for this event.'}
               </p>
             </div>
 
@@ -3203,6 +3203,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                 <span>Confirm Check-In & Enter Flight</span>
               </button>
             </form>
+
+            {/* Presented by TIM Footer */}
+            <div className="mt-2 pt-2 border-t border-slate-800/80 text-center flex items-center justify-center gap-1.5 select-none">
+              <span className="text-[10px] sm:text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                {config.settings.popupFooterText || 'Presented by TIM'}
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -3256,9 +3263,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               <span className="text-2xl shrink-0">{isMagicTheme ? '⚡' : '🚀'}</span>
               <div>
                 <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-wider leading-none">
-                  {isMagicTheme ? 'Hogwarts Flight Guide' : 'Pilot Flight Protocol'}
+                  {config.settings.instructionsTitle || (isMagicTheme ? 'Hogwarts Flight Guide' : 'Pilot Flight Protocol')}
                 </h3>
-                <span className="text-xs text-slate-400 font-medium">Flight rules & mission controls</span>
+                <span className="text-xs text-slate-400 font-medium">
+                  {config.settings.instructionsSubtitle || 'Flight rules & mission controls'}
+                </span>
               </div>
             </div>
 
@@ -3416,6 +3425,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
             >
               <span>Got It — Ready to Play</span>
             </button>
+
+            {/* Presented by TIM Footer */}
+            <div className="mt-2.5 pt-2 border-t border-slate-800/80 text-center flex items-center justify-center gap-1.5 select-none">
+              <span className="text-[10px] sm:text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                {config.settings.popupFooterText || 'Presented by TIM'}
+              </span>
+            </div>
           </div>
         </div>
       )}

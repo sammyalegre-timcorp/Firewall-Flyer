@@ -94,6 +94,11 @@ export interface GameSettings {
   requireRegistration: boolean; // Pre-game login / attendee registration toggle
   activeEventId: string; // ID of active event to save registers to
   activeEventName: string; // Name of active event
+  registrationTitle?: string; // Custom title for registration popup
+  registrationSubtitle?: string; // Custom subtitle for registration popup
+  instructionsTitle?: string; // Custom title for instructions popup
+  instructionsSubtitle?: string; // Custom subtitle for instructions popup
+  popupFooterText?: string; // Footer tag at bottom of popups (default "Presented by TIM")
 }
 
 export interface AppConfig {

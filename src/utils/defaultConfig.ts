@@ -432,6 +432,11 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     requireRegistration: true,
     activeEventId: 'tim_summit_2026',
     activeEventName: 'TIM Technology Summit 2026',
+    registrationTitle: 'Pilot Registration & Check-In',
+    registrationSubtitle: 'Fill in your details below to save your flight run & tournament scores for this event.',
+    instructionsTitle: 'Pilot Flight Protocol',
+    instructionsSubtitle: 'Flight rules & mission controls',
+    popupFooterText: 'Presented by TIM',
   },
 };
 
@@ -490,6 +495,11 @@ export function loadAppConfig(): AppConfig {
         requireRegistration: parsed.settings?.requireRegistration !== undefined ? parsed.settings.requireRegistration : true,
         activeEventId: parsed.settings?.activeEventId || 'tim_summit_2026',
         activeEventName: parsed.settings?.activeEventName || 'TIM Technology Summit 2026',
+        registrationTitle: parsed.settings?.registrationTitle || 'Pilot Registration & Check-In',
+        registrationSubtitle: parsed.settings?.registrationSubtitle || 'Fill in your details below to save your flight run & tournament scores for this event.',
+        instructionsTitle: parsed.settings?.instructionsTitle || (theme === 'magic_academy' ? 'Hogwarts Flight Guide' : 'Pilot Flight Protocol'),
+        instructionsSubtitle: parsed.settings?.instructionsSubtitle || (theme === 'magic_academy' ? 'Flight rules & magical controls' : 'Flight rules & mission controls'),
+        popupFooterText: parsed.settings?.popupFooterText || 'Presented by TIM',
       },
       customSkyline: { ...DEFAULT_APP_CONFIG.customSkyline, ...(parsed.customSkyline || {}) },
       characters: parsed.characters && parsed.characters.length === 6 ? parsed.characters : fallbackChars,
