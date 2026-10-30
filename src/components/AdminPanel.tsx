@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { AppConfig, Character, CoinStyleId, MonsterTypeId, SkylineTheme, GameTheme } from '../types/game';
+import { AppConfig, Character, CoinStyleId, MonsterTypeId, SkylineTheme, GameTheme, PrizeTier } from '../types/game';
 import { 
   SKYLINE_THEMES, 
   MONSTER_CONFIGS, 
   COIN_CONFIGS, 
   DEFAULT_APP_CONFIG,
   CYBER_CHARACTERS,
-  WIZARD_CHARACTERS
+  WIZARD_CHARACTERS,
+  DEFAULT_BRAND_LOGO,
+  DEFAULT_PRIZE_TIERS,
+  LAST_USED_LOGO_KEY,
 } from '../utils/defaultConfig';
 import { 
   Building2, 
@@ -34,6 +37,9 @@ import {
   CheckCircle2,
   Calendar,
   Database,
+  Trophy,
+  Award,
+  Gift,
 } from 'lucide-react';
 import {
   getEvents,
@@ -57,9 +63,15 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, onClose }) => {
   const [formData, setFormData] = useState<AppConfig>(JSON.parse(JSON.stringify(config)));
-  const [activeTab, setActiveTab] = useState<'themes' | 'branding' | 'skyline' | 'characters' | 'monsters' | 'coins' | 'physics' | 'events'>('themes');
+  const [activeTab, setActiveTab] = useState<'themes' | 'branding' | 'skyline' | 'characters' | 'monsters' | 'coins' | 'physics' | 'prizes' | 'events'>('themes');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [characterGenderFilter, setCharacterGenderFilter] = useState<'all' | 'boy' | 'girl'>('all');
+
+  // Prize Tiers state
+  const [newPrizeScore, setNewPrizeScore] = useState<number>(15);
+  const [newPrizeName, setNewPrizeName] = useState<string>('');
+  const [newPrizeDesc, setNewPrizeDesc] = useState<string>('');
+  const [newPrizeBadgeColor, setNewPrizeBadgeColor] = useState<string>('#38bdf8');
 
   // Event & Attendee Registers State
   const [eventsList, setEventsList] = useState<EventSession[]>(() => getEvents());
@@ -102,6 +114,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
   const isMagic = formData.theme === 'magic_academy';
 
   const handleSave = () => {
+    // Make sure the last used logo is permanently preserved
+    const activeLogo = formData.branding.customLogoDataUrl || formData.branding.logoUrl;
+    if (activeLogo) {
+      try {
+        localStorage.setItem(LAST_USED_LOGO_KEY, activeLogo);
+      } catch (err) {
+        console.warn('Could not save logo to localStorage', err);
+      }
+    }
     onSaveConfig(formData);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
@@ -109,8 +130,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
 
   const handleResetDefaults = () => {
     if (confirm('Reset all game customizations and branding back to default values?')) {
-      setFormData(JSON.parse(JSON.stringify(DEFAULT_APP_CONFIG)));
-      onSaveConfig(DEFAULT_APP_CONFIG);
+      const activeLogo = localStorage.getItem(LAST_USED_LOGO_KEY);
+      const resetConfig: AppConfig = JSON.parse(JSON.stringify(DEFAULT_APP_CONFIG));
+      if (activeLogo) {
+        resetConfig.branding.logoUrl = activeLogo;
+        resetConfig.branding.customLogoDataUrl = activeLogo;
+      }
+      setFormData(resetConfig);
+      onSaveConfig(resetConfig);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
     }
@@ -166,15 +193,96 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
+      try {
+        localStorage.setItem(LAST_USED_LOGO_KEY, dataUrl);
+      } catch (err) {
+        console.warn('Could not cache logo in localStorage', err);
+      }
       setFormData((prev) => ({
         ...prev,
         branding: {
           ...prev.branding,
+          logoUrl: dataUrl,
           customLogoDataUrl: dataUrl,
         },
       }));
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleResetLogoToDefault = () => {
+    try {
+      localStorage.setItem(LAST_USED_LOGO_KEY, DEFAULT_BRAND_LOGO);
+    } catch {}
+    setFormData((prev) => ({
+      ...prev,
+      branding: {
+        ...prev.branding,
+        logoUrl: DEFAULT_BRAND_LOGO,
+        customLogoDataUrl: undefined,
+      },
+    }));
+  };
+
+  // Prize Tiers CRUD helpers
+  const handleAddPrizeTier = () => {
+    if (!newPrizeName.trim()) return;
+    const newTier: PrizeTier = {
+      id: `tier_${Date.now()}`,
+      minScore: Math.max(1, newPrizeScore),
+      prizeName: newPrizeName.trim(),
+      description: newPrizeDesc.trim() || undefined,
+      badgeColor: newPrizeBadgeColor || '#f59e0b',
+    };
+
+    const currentTiers = formData.settings.prizeTiers || [];
+    const updatedTiers = [...currentTiers, newTier].sort((a, b) => a.minScore - b.minScore);
+    setFormData((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        prizeTiers: updatedTiers,
+      },
+    }));
+    setNewPrizeName('');
+    setNewPrizeDesc('');
+    setNewPrizeScore(updatedTiers[updatedTiers.length - 1].minScore + 15);
+  };
+
+  const handleUpdatePrizeTier = (id: string, updates: Partial<PrizeTier>) => {
+    const currentTiers = formData.settings.prizeTiers || [];
+    const updatedTiers = currentTiers.map((t) => (t.id === id ? { ...t, ...updates } : t));
+    if (updates.minScore !== undefined) {
+      updatedTiers.sort((a, b) => a.minScore - b.minScore);
+    }
+    setFormData((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        prizeTiers: updatedTiers,
+      },
+    }));
+  };
+
+  const handleDeletePrizeTier = (id: string) => {
+    const currentTiers = formData.settings.prizeTiers || [];
+    setFormData((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        prizeTiers: currentTiers.filter((t) => t.id !== id),
+      },
+    }));
+  };
+
+  const handleResetPrizeTiers = () => {
+    setFormData((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        prizeTiers: DEFAULT_PRIZE_TIERS,
+      },
+    }));
   };
 
   const handleCoinImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -393,6 +501,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
           >
             <Sliders className="w-4 h-4 shrink-0 text-emerald-400" />
             <span>Physics & Flight Speed</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('prizes')}
+            className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-xs font-semibold text-left transition-all cursor-pointer ${
+              activeTab === 'prizes'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Trophy className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>Score Prizes & Rewards</span>
+            </div>
+            {formData.settings.prizeTiers && formData.settings.prizeTiers.length > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/30 text-amber-200 font-mono">
+                {formData.settings.prizeTiers.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -876,22 +1003,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                   )}
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                    Upload Custom Logo Image
-                  </label>
-                  <label className="flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-slate-600 text-sm text-slate-200 cursor-pointer transition-colors">
-                    <Upload className="w-4 h-4 text-cyan-400" />
-                    <span className="truncate">
-                      {formData.branding.customLogoDataUrl ? 'Replace Custom Logo Image' : 'Choose Logo File (PNG/JPG)'}
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoUpload}
-                      className="hidden"
-                    />
-                  </label>
+                <div className="sm:col-span-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Upload Custom Brand Logo Image
+                    </label>
+                    {(Boolean(formData.branding.customLogoDataUrl) || formData.branding.logoUrl !== DEFAULT_BRAND_LOGO) && (
+                      <button
+                        type="button"
+                        onClick={handleResetLogoToDefault}
+                        className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Reset to TIM Logo</span>
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <label className="flex-1 flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-slate-600 text-sm text-slate-200 cursor-pointer transition-colors">
+                      <Upload className="w-4 h-4 text-cyan-400" />
+                      <span className="truncate">
+                        {formData.branding.customLogoDataUrl ? 'Replace Uploaded Logo Image' : 'Choose Logo File (PNG/JPG)'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {formData.branding.customLogoDataUrl && (
+                      <div className="px-3 py-2 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5 shrink-0">
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Custom Logo Active &amp; Saved</span>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-cyan-400 shrink-0" />
+                    <span>Whatever logo is uploaded or set last will be permanently remembered and maintained across game reloads, events, and theme switches.</span>
+                  </p>
                 </div>
               </div>
             </div>
@@ -1426,7 +1577,269 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
             </div>
           )}
 
-          {/* 8. EVENT REGISTERS & LOGIN MANAGEMENT */}
+          {/* 8. SCORE PRIZES & REWARDS MANAGEMENT */}
+          {activeTab === 'prizes' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
+                    <Trophy className="w-5 h-5 text-amber-400" />
+                    <span>Tournament Prizes &amp; Score Rewards</span>
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Configure multiple score thresholds and the prizes players win when collecting coins or snitches. When the game ends, their score, best record, and won prize are showcased.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResetPrizeTiers}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition-colors flex items-center gap-1.5 self-start cursor-pointer shrink-0"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Restore Default Tiers</span>
+                </button>
+              </div>
+
+              {/* Master Toggle */}
+              <div className="bg-slate-800/40 border border-slate-700/60 p-4 rounded-2xl flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-bold text-white block">
+                    Show Prizes on Game Over Screen
+                  </label>
+                  <p className="text-xs text-slate-400">
+                    Displays the prize unlocked (or next prize threshold) right below the final score card when the run terminates or time runs out.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.settings.enablePrizes !== false}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        settings: {
+                          ...formData.settings,
+                          enablePrizes: e.target.checked,
+                        },
+                      })
+                    }
+                    className="w-5 h-5 rounded text-amber-500 focus:ring-amber-400 bg-slate-900 border-slate-700 accent-amber-500 cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-amber-400">
+                    {formData.settings.enablePrizes !== false ? 'Enabled' : 'Disabled'}
+                  </span>
+                </label>
+              </div>
+
+              {/* Existing Prize Tiers List */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <Award className="w-4 h-4 text-cyan-400" />
+                    <span>Configured Prize Tiers ({formData.settings.prizeTiers?.length || 0})</span>
+                  </h3>
+                  <span className="text-[11px] text-slate-400">
+                    Sorted by score required (ascending)
+                  </span>
+                </div>
+
+                {(!formData.settings.prizeTiers || formData.settings.prizeTiers.length === 0) ? (
+                  <div className="p-8 rounded-2xl bg-slate-800/30 border border-dashed border-slate-700 text-center text-slate-400">
+                    <Gift className="w-8 h-8 mx-auto mb-2 text-slate-600" />
+                    <p className="text-sm font-medium">No prize tiers currently set.</p>
+                    <p className="text-xs text-slate-500 mt-1">Use the form below to add your first score milestone and prize.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {formData.settings.prizeTiers.map((tier, idx) => (
+                      <div
+                        key={tier.id}
+                        className="p-4 rounded-2xl bg-slate-800/40 border border-slate-700/80 hover:border-slate-600 transition-all space-y-3"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/50 pb-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <span 
+                              className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                              style={{ backgroundColor: tier.badgeColor || '#f59e0b' }}
+                            />
+                            <span className="text-xs font-mono font-bold text-slate-400">
+                              TIER #{idx + 1}
+                            </span>
+                            <span className="text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700">
+                              Requires {tier.minScore} {formData.theme === 'magic_academy' ? 'snitches' : 'coins'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-auto">
+                            {/* Color Selector */}
+                            <div className="flex items-center gap-1">
+                              {['#cd7f32', '#94a3b8', '#f59e0b', '#00f0ff', '#a855f7', '#10b981'].map((c) => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => handleUpdatePrizeTier(tier.id, { badgeColor: c })}
+                                  className={`w-4 h-4 rounded-full transition-transform cursor-pointer ${
+                                    tier.badgeColor === c ? 'scale-125 ring-2 ring-white' : 'opacity-70 hover:opacity-100'
+                                  }`}
+                                  style={{ backgroundColor: c }}
+                                  title={`Badge color ${c}`}
+                                />
+                              ))}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePrizeTier(tier.id)}
+                              className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-500/40 text-rose-300 hover:text-rose-100 transition-colors cursor-pointer"
+                              title="Delete prize tier"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                          {/* Score Needed */}
+                          <div className="sm:col-span-3">
+                            <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                              Score Needed
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="9999"
+                              value={tier.minScore}
+                              onChange={(e) =>
+                                handleUpdatePrizeTier(tier.id, { minScore: Math.max(1, parseInt(e.target.value, 10) || 1) })
+                              }
+                              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 font-mono font-bold text-sm focus:outline-none focus:border-amber-400"
+                            />
+                          </div>
+
+                          {/* Prize Name */}
+                          <div className="sm:col-span-5">
+                            <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                              Prize Title
+                            </label>
+                            <input
+                              type="text"
+                              value={tier.prizeName}
+                              onChange={(e) =>
+                                handleUpdatePrizeTier(tier.id, { prizeName: e.target.value })
+                              }
+                              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-cyan-400"
+                              placeholder="e.g. TIM Fast Charge Cable"
+                            />
+                          </div>
+
+                          {/* Prize Description */}
+                          <div className="sm:col-span-4">
+                            <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                              Details / How to Claim
+                            </label>
+                            <input
+                              type="text"
+                              value={tier.description || ''}
+                              onChange={(e) =>
+                                handleUpdatePrizeTier(tier.id, { description: e.target.value })
+                              }
+                              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 text-xs focus:outline-none focus:border-cyan-400"
+                              placeholder="e.g. Claim at Booth #4"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Add New Prize Tier Form */}
+              <div className="bg-slate-850/80 border border-slate-700/80 rounded-2xl p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-bold text-white">Add New Prize Milestone</h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                  <div className="sm:col-span-3">
+                    <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                      Score Needed ({formData.theme === 'magic_academy' ? 'Snitches' : 'Coins'})
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="9999"
+                      value={newPrizeScore}
+                      onChange={(e) => setNewPrizeScore(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 font-mono font-bold text-sm focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-5">
+                    <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                      Prize Name / Reward Title
+                    </label>
+                    <input
+                      type="text"
+                      value={newPrizeName}
+                      onChange={(e) => setNewPrizeName(e.target.value)}
+                      placeholder="e.g. TIM Premium Wireless Earbuds"
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-cyan-400"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-4">
+                    <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                      Claim Instructions (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={newPrizeDesc}
+                      onChange={(e) => setNewPrizeDesc(e.target.value)}
+                      placeholder="e.g. Show score to booth attendant to redeem"
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 text-xs focus:outline-none focus:border-cyan-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-400 font-semibold">Badge Color:</span>
+                    <div className="flex items-center gap-1.5">
+                      {['#cd7f32', '#94a3b8', '#f59e0b', '#00f0ff', '#a855f7', '#10b981', '#f43f5e'].map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setNewPrizeBadgeColor(c)}
+                          className={`w-5 h-5 rounded-full transition-transform cursor-pointer ${
+                            newPrizeBadgeColor === c ? 'scale-125 ring-2 ring-white' : 'opacity-70 hover:opacity-100'
+                          }`}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddPrizeTier}
+                    disabled={!newPrizeName.trim()}
+                    className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      newPrizeName.trim()
+                        ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-500/20'
+                        : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                    }`}
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Prize Tier ({newPrizeScore} coins)</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 9. EVENT REGISTERS & LOGIN MANAGEMENT */}
           {activeTab === 'events' && (
             <div className="space-y-6">
               <div>

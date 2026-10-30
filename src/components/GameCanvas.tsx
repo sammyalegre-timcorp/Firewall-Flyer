@@ -24,8 +24,12 @@ import {
   Briefcase,
   UserCheck,
   LogOut,
+  Trophy,
+  Award,
+  Gift,
 } from 'lucide-react';
 import { AttendeeRegistration } from '../types/game';
+import { DEFAULT_BRAND_LOGO } from '../utils/defaultConfig';
 import {
   getCurrentSessionAttendee,
   saveRegistration,
@@ -3514,124 +3518,199 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       )}
 
       {/* GAME OVER Screen */}
-      {gameState === 'GAME_OVER' && (
-        <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
-          <div className="max-w-sm w-full bg-slate-900/95 border border-amber-500/40 rounded-3xl p-6 sm:p-7 shadow-2xl relative overflow-hidden flex flex-col items-center">
-            
-            {/* PROMINENT BRAND LOGO IN FRAME */}
-            <div 
-              className={`w-20 h-20 rounded-2xl overflow-hidden border-2 mb-3 bg-white flex items-center justify-center shadow-xl p-1.5 ${
-                isMagicTheme ? 'border-amber-400 ring-2 ring-amber-500/30' : ''
-              }`}
-              style={{ borderColor: isMagicTheme ? '#f59e0b' : config.branding.neonColor }}
-            >
-              {config.branding.customLogoDataUrl || config.branding.logoUrl ? (
+      {gameState === 'GAME_OVER' && (() => {
+        const prizeTiers = (config.settings.prizeTiers || []).slice().sort((a, b) => b.minScore - a.minScore);
+        const wonPrize = prizeTiers.find((tier) => coinsCollected >= tier.minScore);
+        const nextPrize = (config.settings.prizeTiers || []).slice().sort((a, b) => a.minScore - b.minScore).find((tier) => coinsCollected < tier.minScore);
+        const bestScore = Math.max(coinsCollected, highScore);
+
+        return (
+          <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-4 sm:p-6 text-center animate-fadeIn select-none">
+            <div className="max-w-md w-full bg-slate-900/95 border border-amber-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden flex flex-col items-center">
+              
+              {/* PROMINENT BRAND LOGO IN FRAME */}
+              <div 
+                className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden border-2 mb-2 bg-white flex items-center justify-center shadow-xl p-1.5 ${
+                  isMagicTheme ? 'border-amber-400 ring-2 ring-amber-500/30' : ''
+                }`}
+                style={{ borderColor: isMagicTheme ? '#f59e0b' : config.branding.neonColor }}
+              >
                 <img
-                  src={config.branding.customLogoDataUrl || config.branding.logoUrl}
+                  src={config.branding.customLogoDataUrl || config.branding.logoUrl || DEFAULT_BRAND_LOGO}
                   alt="Brand Logo"
                   className="w-full h-full object-contain rounded-xl"
                   referrerPolicy="no-referrer"
                 />
-              ) : (
-                <span className="text-3xl font-black text-amber-400">{isMagicTheme ? '⚡' : '★'}</span>
-              )}
-            </div>
-
-            {config.branding.showBrandName !== false && Boolean(config.branding.brandName) && (
-              <div className="text-sm font-extrabold tracking-wider uppercase text-white mb-0.5">
-                {config.branding.brandName}
               </div>
-            )}
-            {config.branding.showTagline !== false && Boolean(config.branding.tagline) && (
-              <div className="text-[11px] font-mono text-amber-400 mb-4">
-                {config.branding.tagline}
-              </div>
-            )}
-            {((config.branding.showBrandName === false || !config.branding.brandName) &&
-              (config.branding.showTagline === false || !config.branding.tagline)) && (
-              <div className="mb-2" />
-            )}
 
-            <div className="text-xs font-bold text-pink-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
-              {gameOverReason === 'TIME_EXPIRED' ? (
-                <span className="text-rose-400 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" />
-                  Flight Time Expired
-                </span>
-              ) : (
-                <span>Flight Terminated</span>
+              {config.branding.showBrandName !== false && Boolean(config.branding.brandName) && (
+                <div className="text-sm font-extrabold tracking-wider uppercase text-white mb-0.5">
+                  {config.branding.brandName}
+                </div>
               )}
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-white mb-3">
-              {gameOverReason === 'TIME_EXPIRED' ? "TIME'S UP!" : 'GAME OVER'}
-            </h2>
+              {config.branding.showTagline !== false && Boolean(config.branding.tagline) && (
+                <div className="text-[11px] font-mono text-amber-400 mb-2">
+                  {config.branding.tagline}
+                </div>
+              )}
+              {((config.branding.showBrandName === false || !config.branding.brandName) &&
+                (config.branding.showTagline === false || !config.branding.tagline)) && (
+                <div className="mb-1" />
+              )}
 
-            {/* REGISTERED ATTENDEE RUN SUMMARY */}
-            {currentAttendee && (config.settings.requireRegistration ?? true) && (
-              <div className="w-full bg-purple-950/40 border border-purple-500/30 rounded-2xl p-2.5 mb-3.5 text-left flex items-center justify-between">
-                <div>
-                  <span className="text-[9px] font-mono font-bold text-purple-300 block uppercase tracking-wider">
-                    Official Event Record
+              <div className="text-xs font-bold text-pink-400 uppercase tracking-widest mb-0.5 flex items-center gap-1.5">
+                {gameOverReason === 'TIME_EXPIRED' ? (
+                  <span className="text-rose-400 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    Flight Time Expired
                   </span>
-                  <div className="text-xs font-bold text-white truncate max-w-[190px]">
-                    {currentAttendee.name}
-                    {currentAttendee.company && (
-                      <span className="text-slate-400 font-normal"> &bull; {currentAttendee.company}</span>
-                    )}
+                ) : (
+                  <span>Flight Terminated</span>
+                )}
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white mb-2">
+                {gameOverReason === 'TIME_EXPIRED' ? "TIME'S UP!" : 'GAME OVER'}
+              </h2>
+
+              {/* REGISTERED ATTENDEE RUN SUMMARY */}
+              {currentAttendee && (config.settings.requireRegistration ?? true) && (
+                <div className="w-full bg-purple-950/40 border border-purple-500/30 rounded-2xl p-2.5 mb-3 text-left flex items-center justify-between">
+                  <div>
+                    <span className="text-[9px] font-mono font-bold text-purple-300 block uppercase tracking-wider">
+                      Official Event Record
+                    </span>
+                    <div className="text-xs font-bold text-white truncate max-w-[200px]">
+                      {currentAttendee.name}
+                      {currentAttendee.company && (
+                        <span className="text-slate-400 font-normal"> &bull; {currentAttendee.company}</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearCurrentSessionAttendee();
+                      setCurrentAttendee(null);
+                      setRegName('');
+                      setRegCompany('');
+                      setRegEmail('');
+                      setRegContactNumber('');
+                      setRegPosition('');
+                      setShowRegistration(true);
+                      resetToReady();
+                    }}
+                    className="px-2 py-1 rounded-lg bg-purple-900/70 hover:bg-purple-800 text-[10px] font-bold text-purple-200 border border-purple-500/40 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                    title="Register next attendee"
+                  >
+                    <LogOut className="w-3 h-3" />
+                    <span>Next Pilot</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Score Card */}
+              <div className="w-full bg-slate-950/80 border border-slate-800 rounded-2xl p-3 mb-2.5 flex items-center justify-around">
+                <div>
+                  <span className="text-[10px] font-semibold text-slate-400 block mb-0.5 uppercase tracking-wider">
+                    Your Score
+                  </span>
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span className="text-3xl font-black text-amber-300 font-mono-num">{coinsCollected}</span>
+                    <span className="text-xs text-amber-400/80 font-bold">{isMagicTheme ? 'snitches' : 'coins'}</span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    clearCurrentSessionAttendee();
-                    setCurrentAttendee(null);
-                    setRegName('');
-                    setRegCompany('');
-                    setRegEmail('');
-                    setRegContactNumber('');
-                    setRegPosition('');
-                    setShowRegistration(true);
-                    resetToReady();
-                  }}
-                  className="px-2 py-1 rounded-lg bg-purple-900/70 hover:bg-purple-800 text-[10px] font-bold text-purple-200 border border-purple-500/40 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-                  title="Register next attendee"
-                >
-                  <LogOut className="w-3 h-3" />
-                  <span>Next Pilot</span>
-                </button>
+                <div className="h-9 w-[1px] bg-slate-800" />
+                <div>
+                  <span className="text-[10px] font-semibold text-slate-400 block mb-0.5 uppercase tracking-wider">Best Score</span>
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span className="text-2xl font-black text-cyan-400 font-mono-num">{bestScore}</span>
+                    <span className="text-xs text-cyan-400/80 font-bold">{isMagicTheme ? 'snitches' : 'coins'}</span>
+                  </div>
+                </div>
               </div>
-            )}
 
-            {/* Score Card */}
-            <div className="w-full bg-slate-950/80 border border-slate-800 rounded-2xl p-4 mb-5 flex items-center justify-around">
-              <div>
-                <span className="text-[11px] font-semibold text-slate-400 block mb-1">
-                  {isMagicTheme ? 'Snitches Caught' : 'Coins Collected'}
-                </span>
-                <span className="text-3xl font-black text-amber-300 font-mono-num">{coinsCollected}</span>
-              </div>
-              <div className="h-10 w-[1px] bg-slate-800" />
-              <div>
-                <span className="text-[11px] font-semibold text-slate-400 block mb-1">Best Record</span>
-                <span className="text-2xl font-black text-cyan-400 font-mono-num">{Math.max(coinsCollected, highScore)}</span>
-              </div>
+              {/* PRIZE DISPLAY SECTION */}
+              {(config.settings.enablePrizes !== false) && (
+                <div className={`w-full rounded-2xl p-3 mb-4 border text-left transition-all ${
+                  wonPrize 
+                    ? 'bg-gradient-to-r from-amber-950/60 via-yellow-950/40 to-slate-900 border-amber-500/50 shadow-md shadow-amber-500/10'
+                    : 'bg-slate-950/70 border-slate-800'
+                }`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 text-amber-300">
+                      <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Prize Award</span>
+                    </span>
+                    {wonPrize ? (
+                      <span 
+                        className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full text-slate-950 font-mono tracking-tight"
+                        style={{ backgroundColor: wonPrize.badgeColor || '#f59e0b' }}
+                      >
+                        Won &bull; {wonPrize.minScore}+ Score
+                      </span>
+                    ) : (
+                      nextPrize && (
+                        <span className="text-[9px] font-semibold text-slate-400 font-mono">
+                          Tier at {nextPrize.minScore} {isMagicTheme ? 'snitches' : 'coins'}
+                        </span>
+                      )
+                    )}
+                  </div>
+
+                  {wonPrize ? (
+                    <div>
+                      <div className="text-sm font-extrabold text-white flex items-center gap-1.5">
+                        <span className="text-base">🎁</span>
+                        <span className="truncate">{wonPrize.prizeName}</span>
+                      </div>
+                      {wonPrize.description && (
+                        <p className="text-[11px] text-amber-200/80 mt-0.5 leading-snug">
+                          {wonPrize.description}
+                        </p>
+                      )}
+                      {nextPrize && (
+                        <div className="mt-2 pt-1.5 border-t border-amber-500/20 text-[10px] text-slate-300 flex items-center justify-between">
+                          <span className="text-slate-400">Next tier at {nextPrize.minScore} {isMagicTheme ? 'snitches' : 'coins'}:</span>
+                          <span className="font-semibold text-amber-300 truncate max-w-[170px]">{nextPrize.prizeName} (+{nextPrize.minScore - coinsCollected} needed)</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5 text-slate-500" />
+                        <span>No prize tier unlocked yet</span>
+                      </div>
+                      {nextPrize ? (
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          Score <strong className="text-amber-300 font-mono">+{nextPrize.minScore - coinsCollected} more</strong> {isMagicTheme ? 'snitches' : 'coins'} ({nextPrize.minScore} total) to win the <strong className="text-white">{nextPrize.prizeName}</strong>!
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          No prize tiers currently set in Admin settings.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* FLY AGAIN BUTTON */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  resetToReady();
+                }}
+                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg hover:shadow-amber-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Fly Again</span>
+              </button>
             </div>
-
-            {/* FLY AGAIN BUTTON */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                resetToReady();
-              }}
-              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg hover:shadow-amber-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Fly Again</span>
-            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

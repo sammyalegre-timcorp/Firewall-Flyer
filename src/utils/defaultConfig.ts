@@ -1,4 +1,4 @@
-import { AppConfig, Character, MonsterConfig, CoinConfig, SkylineTheme, GameTheme } from '../types/game';
+import { AppConfig, Character, MonsterConfig, CoinConfig, SkylineTheme, GameTheme, PrizeTier } from '../types/game';
 
 // Generated asset paths
 export const DEFAULT_BRAND_LOGO = '/assets/aistudio/TIM_LOGO_low_quality_d0071df0.png';
@@ -390,6 +390,39 @@ export const SKYLINE_THEMES: Record<string, SkylineTheme> = {
   },
 };
 
+export const LAST_USED_LOGO_KEY = 'tim_last_active_logo_v1';
+
+export const DEFAULT_PRIZE_TIERS: PrizeTier[] = [
+  {
+    id: 'tier_bronze',
+    minScore: 10,
+    prizeName: 'TIM Swag Sticker Pack & Tech Badge',
+    description: 'Score 10+ coins to claim official TIM Summit vinyl stickers & tech badge at the registration booth.',
+    badgeColor: '#cd7f32',
+  },
+  {
+    id: 'tier_silver',
+    minScore: 25,
+    prizeName: 'TIM Multi-Port Fast Charge Cable',
+    description: 'Score 25+ coins to win a premium nylon-braided TIM 4-in-1 fast charge cable kit.',
+    badgeColor: '#94a3b8',
+  },
+  {
+    id: 'tier_gold',
+    minScore: 50,
+    prizeName: 'TIM Smart Power Bank (10,000mAh)',
+    description: 'Score 50+ coins to win an ultra-slim fast charge LED power bank & thermal travel tumbler.',
+    badgeColor: '#f59e0b',
+  },
+  {
+    id: 'tier_champion',
+    minScore: 80,
+    prizeName: 'Grand Champion ANC Wireless Headset',
+    description: 'Score 80+ coins to claim the flagship TIM Active Noise Cancelling Wireless Headset & tournament trophy!',
+    badgeColor: '#00f0ff',
+  },
+];
+
 export const DEFAULT_APP_CONFIG: AppConfig = {
   theme: 'cyber_arcade',
   selectedCharacterId: 'cyber_boy_kai',
@@ -437,29 +470,57 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     instructionsTitle: 'Pilot Flight Protocol',
     instructionsSubtitle: 'Flight rules & mission controls',
     popupFooterText: 'Presented by TIM',
+    enablePrizes: true,
+    prizeTiers: DEFAULT_PRIZE_TIERS,
   },
 };
 
-const STORAGE_KEY = 'neon_glide_config_v8';
-const PREV_STORAGE_KEY = 'neon_glide_config_v7';
+const STORAGE_KEY = 'neon_glide_config_v9';
+const PREV_STORAGE_KEY = 'neon_glide_config_v8';
 const SCORES_KEY = 'neon_glide_highscores_v6';
 
 export function loadAppConfig(): AppConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(PREV_STORAGE_KEY);
-    if (!raw) return DEFAULT_APP_CONFIG;
+    const lastPersistedLogo = localStorage.getItem(LAST_USED_LOGO_KEY);
+
+    if (!raw) {
+      if (lastPersistedLogo) {
+        return {
+          ...DEFAULT_APP_CONFIG,
+          branding: {
+            ...DEFAULT_APP_CONFIG.branding,
+            logoUrl: lastPersistedLogo,
+            customLogoDataUrl: lastPersistedLogo,
+          },
+        };
+      }
+      return DEFAULT_APP_CONFIG;
+    }
+
     const parsed = JSON.parse(raw);
     const theme: GameTheme = parsed.theme || 'cyber_arcade';
     const fallbackChars = theme === 'magic_academy' ? WIZARD_CHARACTERS : CYBER_CHARACTERS;
 
-    // Migrate previous placeholder/cyber logo to TIM default logo across all themes
-    const savedLogo = parsed.branding?.logoUrl;
+    // Highest priority for logo: dedicated LAST_USED_LOGO_KEY, then parsed.branding.customLogoDataUrl, then parsed.branding.logoUrl
+    let effectiveLogo = lastPersistedLogo || parsed.branding?.customLogoDataUrl || parsed.branding?.logoUrl;
     const isOldLogo =
-      !savedLogo ||
-      savedLogo.includes('brand_cyber_logo') ||
-      savedLogo.includes('1792721443107');
+      !effectiveLogo ||
+      effectiveLogo.includes('brand_cyber_logo') ||
+      effectiveLogo.includes('1792721443107');
 
-    const effectiveLogo = isOldLogo ? DEFAULT_BRAND_LOGO : savedLogo;
+    if (isOldLogo) {
+      effectiveLogo = DEFAULT_BRAND_LOGO;
+    }
+
+    // Always keep LAST_USED_LOGO_KEY in sync
+    if (effectiveLogo) {
+      try {
+        localStorage.setItem(LAST_USED_LOGO_KEY, effectiveLogo);
+      } catch {
+        // ignore localStorage quota errors
+      }
+    }
 
     // Merge monster configs with custom images preserved
     const mergedMonsters: Record<string, MonsterConfig> = { ...MONSTER_CONFIGS };
@@ -474,6 +535,12 @@ export function loadAppConfig(): AppConfig {
       });
     }
 
+    // Ensure prize tiers exist and are sorted by minScore ascending
+    const loadedPrizeTiers: PrizeTier[] =
+      Array.isArray(parsed.settings?.prizeTiers) && parsed.settings.prizeTiers.length > 0
+        ? parsed.settings.prizeTiers
+        : DEFAULT_PRIZE_TIERS;
+
     return {
       ...DEFAULT_APP_CONFIG,
       ...parsed,
@@ -482,6 +549,7 @@ export function loadAppConfig(): AppConfig {
         ...DEFAULT_APP_CONFIG.branding,
         ...(parsed.branding || {}),
         logoUrl: effectiveLogo,
+        customLogoDataUrl: effectiveLogo.startsWith('data:') ? effectiveLogo : (parsed.branding?.customLogoDataUrl || effectiveLogo),
         showBrandName: parsed.branding?.showBrandName !== undefined ? parsed.branding.showBrandName : true,
         showTagline: parsed.branding?.showTagline !== undefined ? parsed.branding.showTagline : true,
       },
@@ -500,6 +568,8 @@ export function loadAppConfig(): AppConfig {
         instructionsTitle: parsed.settings?.instructionsTitle || (theme === 'magic_academy' ? 'Hogwarts Flight Guide' : 'Pilot Flight Protocol'),
         instructionsSubtitle: parsed.settings?.instructionsSubtitle || (theme === 'magic_academy' ? 'Flight rules & magical controls' : 'Flight rules & mission controls'),
         popupFooterText: parsed.settings?.popupFooterText || 'Presented by TIM',
+        enablePrizes: parsed.settings?.enablePrizes !== undefined ? parsed.settings.enablePrizes : true,
+        prizeTiers: loadedPrizeTiers,
       },
       customSkyline: { ...DEFAULT_APP_CONFIG.customSkyline, ...(parsed.customSkyline || {}) },
       characters: parsed.characters && parsed.characters.length === 6 ? parsed.characters : fallbackChars,
@@ -513,6 +583,11 @@ export function loadAppConfig(): AppConfig {
 
 export function saveAppConfig(config: AppConfig): void {
   try {
+    // Permanently remember the last used logo
+    const logoToPersist = config.branding?.customLogoDataUrl || config.branding?.logoUrl;
+    if (logoToPersist) {
+      localStorage.setItem(LAST_USED_LOGO_KEY, logoToPersist);
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
   } catch (err) {
     console.error('Failed to save config to localStorage', err);

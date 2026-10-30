@@ -99,6 +99,16 @@ export interface GameSettings {
   instructionsTitle?: string; // Custom title for instructions popup
   instructionsSubtitle?: string; // Custom subtitle for instructions popup
   popupFooterText?: string; // Footer tag at bottom of popups (default "Presented by TIM")
+  enablePrizes?: boolean; // Whether to award and display prizes on game over
+  prizeTiers?: PrizeTier[]; // List of score thresholds and associated prizes
+}
+
+export interface PrizeTier {
+  id: string;
+  minScore: number;
+  prizeName: string;
+  description?: string;
+  badgeColor?: string;
 }
 
 export interface AppConfig {
