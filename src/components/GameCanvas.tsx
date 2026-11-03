@@ -442,6 +442,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   // Input Handling: Hold to fly, Release to fall
   // -----------------------------------------------------------------
   const startThrust = useCallback(() => {
+    if (isQrMode && !currentAttendee) {
+      return;
+    }
     if (stateRef.current.gameState === 'READY') {
       stateRef.current.gameState = 'PLAYING';
       stateRef.current.isThrusting = true;

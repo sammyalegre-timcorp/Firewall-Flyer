@@ -71,6 +71,49 @@ export const MobileController: React.FC<MobileControllerProps> = ({ config, even
   const audioCtxRef = useRef<AudioContext | null>(null);
   const oscRef = useRef<OscillatorNode | null>(null);
   const gainRef = useRef<GainNode | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+
+  // Zero-delay native touch handlers for instantaneous mobile response
+  useEffect(() => {
+    const btn = buttonRef.current;
+    if (!btn) return;
+
+    const onTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+      handleThrustStart();
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+      handleThrustEnd();
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      e.preventDefault();
+      handleThrustStart();
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      e.preventDefault();
+      handleThrustEnd();
+    };
+
+    btn.addEventListener('touchstart', onTouchStart, { passive: false });
+    btn.addEventListener('touchend', onTouchEnd, { passive: false });
+    btn.addEventListener('touchcancel', onTouchEnd, { passive: false });
+    btn.addEventListener('pointerdown', onPointerDown, { passive: false });
+    btn.addEventListener('pointerup', onPointerUp, { passive: false });
+    btn.addEventListener('pointerleave', onPointerUp, { passive: false });
+
+    return () => {
+      btn.removeEventListener('touchstart', onTouchStart);
+      btn.removeEventListener('touchend', onTouchEnd);
+      btn.removeEventListener('touchcancel', onTouchEnd);
+      btn.removeEventListener('pointerdown', onPointerDown);
+      btn.removeEventListener('pointerup', onPointerUp);
+      btn.removeEventListener('pointerleave', onPointerUp);
+    };
+  }, [sessionId]);
 
   // Subscribe to live game session from arcade screen
   useEffect(() => {
@@ -233,27 +276,11 @@ export const MobileController: React.FC<MobileControllerProps> = ({ config, even
   };
 
   // -------------------------------------------------------------
-  // AUTO-DISCONNECT AFTER GAME OVER (5 SECONDS)
+  // GAME OVER: CONTROLLER STAYS CONNECTED (NO AUTO-RETURN TO REGISTRATION)
   // -------------------------------------------------------------
   useEffect(() => {
-    const isGameOver = sessionData?.status === 'game_over' || Boolean(sessionData?.gameOver);
-    if (isGameOver && attendee) {
-      setDisconnectCountdown(5);
-      const interval = setInterval(() => {
-        setDisconnectCountdown((prev) => {
-          if (prev === null || prev <= 1) {
-            clearInterval(interval);
-            handleSwitchPilot();
-            return null;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    } else {
-      setDisconnectCountdown(null);
-    }
-  }, [sessionData?.status, sessionData?.gameOver, attendee]);
+    setDisconnectCountdown(null);
+  }, [sessionData?.status, sessionData?.gameOver]);
 
   // When arcade screen clears the slot, auto-disconnect this device
   useEffect(() => {
@@ -590,6 +617,7 @@ export const MobileController: React.FC<MobileControllerProps> = ({ config, even
           {/* GIANT TACTILE ARCADE BUTTON (PRESS & HOLD / LONG PRESS SUPPORT) */}
           <div className="flex-1 flex items-center justify-center w-full py-2">
             <button
+              ref={buttonRef}
               type="button"
               onPointerDown={handleThrustStart}
               onPointerUp={handleThrustEnd}
