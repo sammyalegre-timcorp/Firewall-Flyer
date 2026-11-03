@@ -499,6 +499,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     const sessionId = config.settings.activeEventId;
     if (sessionId) {
       await releaseDeviceSlot(sessionId);
+      updateGameSession(sessionId, {
+        status: 'ready',
+        gameOver: false,
+        currentScore: 0,
+        prizeWon: null,
+        isThrusting: false,
+        connectedDeviceId: null,
+        connectedDeviceName: null,
+      });
     }
     clearCurrentSessionAttendee();
     setCurrentAttendee(null);
@@ -835,12 +844,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         .find((tier) => finalCoins >= tier.minScore);
 
     if (config.settings.activeEventId) {
+      releaseDeviceSlot(config.settings.activeEventId);
       updateGameSession(config.settings.activeEventId, {
         status: 'game_over',
         gameOver: true,
         currentScore: finalCoins,
         prizeWon: wonPrize ? wonPrize.prizeName : null,
         isThrusting: false,
+        connectedDeviceId: null,
+        connectedDeviceName: null,
       });
     }
   };

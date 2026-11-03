@@ -145,8 +145,11 @@ export const MobileController: React.FC<MobileControllerProps> = ({ config, even
     }
 
     startThrustAudio();
-    // Transmit sustained thrust to game screen
-    setThrustState(sessionId, true);
+    // Transmit sustained thrust and immediate flap impulse to game screen
+    updateGameSession(sessionId, {
+      isThrusting: true,
+      flapTrigger: Date.now(),
+    });
   };
 
   const handleThrustEnd = (e?: React.SyntheticEvent) => {
