@@ -36,5 +36,10 @@ service cloud.firestore {
         && request.resource.data.score is number;
       allow delete: if isValidId(scoreId);
     }
+
+    // Game sessions collection for QR mobile controller sync
+    match /game_sessions/{sessionId} {
+      allow read, write: if isValidId(sessionId);
+    }
   }
 }

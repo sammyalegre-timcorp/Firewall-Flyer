@@ -27,15 +27,30 @@ import {
   Trophy,
   Award,
   Gift,
+  Volume2,
+  VolumeX,
+  Sliders,
+  Shield,
+  UserPlus,
+  CheckCircle2,
+  AlertCircle,
+  QrCode,
+  Smartphone,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { AttendeeRegistration } from '../types/game';
-import { DEFAULT_BRAND_LOGO } from '../utils/defaultConfig';
+import { DEFAULT_BRAND_LOGO, DEFAULT_REGISTRATION_FIELDS } from '../utils/defaultConfig';
 import {
   getCurrentSessionAttendee,
   saveRegistration,
   updateAttendeeScore,
   clearCurrentSessionAttendee,
+  setCurrentSessionAttendee,
+  checkAttendeeExists,
+  getEventLeaderboard,
+  getEventHighScore,
 } from '../utils/eventStorage';
+import { subscribeToGameSession, updateGameSession } from '../lib/firebase';
 
 interface GameCanvasProps {
   config: AppConfig;
@@ -98,8 +113,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   const [levelUpBanner, setLevelUpBanner] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const isFullscreenRef = useRef(false);
-  const [showInstructions, setShowInstructions] = useState(true);
-  const showInstructionsRef = useRef(true);
+  const [showInstructions, setShowInstructions] = useState(false);
+  const showInstructionsRef = useRef(false);
 
   // Timer Bar State
   const initialDuration = config.settings.gameDurationSeconds ?? 60;
@@ -108,13 +123,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   const [gameOverReason, setGameOverReason] = useState<'CRASH' | 'TIME_EXPIRED'>('CRASH');
 
   // Attendee / Pre-game Login State
+  const isQrMode = Boolean(config.settings.enableQrController);
   const [currentAttendee, setCurrentAttendee] = useState<AttendeeRegistration | null>(() =>
     getCurrentSessionAttendee()
   );
   const [showRegistration, setShowRegistration] = useState<boolean>(() => {
+    if (isQrMode) return false;
     return Boolean((config.settings.requireRegistration ?? true) && !getCurrentSessionAttendee());
   });
   const showRegistrationRef = useRef(showRegistration);
+  const controllerUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}?mode=controller&event=${encodeURIComponent(config.settings.activeEventId)}`
+    : '';
 
   // Form Fields
   const [regName, setRegName] = useState('');
@@ -123,6 +143,34 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   const [regContactNumber, setRegContactNumber] = useState('');
   const [regPosition, setRegPosition] = useState('');
   const [regError, setRegError] = useState<string | null>(null);
+
+  // Audio settings state
+  const [isAudioPopoverOpen, setIsAudioPopoverOpen] = useState(false);
+  const [masterVol, setMasterVol] = useState<number>(() => sound.getMasterVolume());
+  const [bgmVol, setBgmVol] = useState<number>(() => sound.getBgmVolume());
+  const [sfxVol, setSfxVol] = useState<number>(() => sound.getSfxVolume());
+  const [bgmActive, setBgmActive] = useState<boolean>(() => config.settings.bgmEnabled ?? true);
+
+  // Admin Play Confirm Modal
+  const [showAdminConfirmModal, setShowAdminConfirmModal] = useState(false);
+
+  // Event Leaderboard Modal & Highscore
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
+  const [eventHighScoreInfo, setEventHighScoreInfo] = useState<{ score: number; holderName: string }>({
+    score: 0,
+    holderName: 'None',
+  });
+
+  // Duplicate attendee detection
+  const [duplicateAttendeeAlert, setDuplicateAttendeeAlert] = useState<AttendeeRegistration | null>(null);
+
+  // Refresh event high score
+  useEffect(() => {
+    try {
+      const info = getEventHighScore(config.settings.activeEventId);
+      setEventHighScoreInfo(info);
+    } catch {}
+  }, [config.settings.activeEventId]);
 
   useEffect(() => {
     isFullscreenRef.current = isFullscreen;
@@ -137,12 +185,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   }, [showRegistration]);
 
   useEffect(() => {
-    if ((config.settings.requireRegistration ?? true) && !getCurrentSessionAttendee()) {
+    if (config.settings.enableQrController) {
+      setShowRegistration(false);
+    } else if ((config.settings.requireRegistration ?? true) && !getCurrentSessionAttendee()) {
       setShowRegistration(true);
     } else if (config.settings.requireRegistration === false) {
       setShowRegistration(false);
     }
-  }, [config.settings.requireRegistration]);
+  }, [config.settings.requireRegistration, config.settings.enableQrController]);
 
   useEffect(() => {
     if (stateRef.current.gameState === 'READY') {
@@ -250,14 +300,25 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     }
   }, [config, activeChar, activeCoin, activeMonster]);
 
-  // Audio background toggle sync
+  // Audio background and theme synchronization throughout the entire game
   useEffect(() => {
-    sound.setBgm(config.settings.bgmEnabled && gameState === 'PLAYING');
+    sound.setTheme(isMagicTheme ? 'magic_academy' : 'cyber_arcade');
+  }, [isMagicTheme]);
+
+  useEffect(() => {
+    if (bgmActive) {
+      sound.setBgm(true);
+    } else {
+      sound.stopBgm();
+    }
+  }, [bgmActive]);
+
+  useEffect(() => {
     return () => {
       sound.stopBgm();
       sound.stopJetpack();
     };
-  }, [config.settings.bgmEnabled, gameState]);
+  }, []);
 
   // Sync fullscreen state with document fullscreen events (standard + webkit vendor)
   useEffect(() => {
@@ -399,6 +460,74 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       sound.stopJetpack();
     }
   }, []);
+
+  const lastFlapTriggerRef = useRef<number>(0);
+
+  const triggerControllerFlap = useCallback(() => {
+    if (stateRef.current.gameState === 'READY') {
+      stateRef.current.gameState = 'PLAYING';
+      stateRef.current.isThrusting = true;
+      stateRef.current.playerVy = -4.5;
+      setGameState('PLAYING');
+      sound.startJetpack(config.settings.soundEnabled);
+      sound.setBgm(config.settings.bgmEnabled);
+      setTimeout(() => {
+        stateRef.current.isThrusting = false;
+        sound.stopJetpack();
+      }, 160);
+      return;
+    }
+
+    if (stateRef.current.gameState !== 'PLAYING') return;
+
+    // Apply upward thrust pulse
+    stateRef.current.isThrusting = true;
+    stateRef.current.playerVy = Math.max(stateRef.current.playerVy - 3.6, config.settings.maxRiseSpeed || -5.8);
+    sound.startJetpack(config.settings.soundEnabled);
+    setTimeout(() => {
+      stateRef.current.isThrusting = false;
+      sound.stopJetpack();
+    }, 160);
+  }, [config]);
+
+  // Real-time Mobile Controller sync from Firestore
+  useEffect(() => {
+    const sessionId = config.settings.activeEventId;
+    if (!sessionId) return;
+
+    const unsub = subscribeToGameSession(sessionId, (session) => {
+      if (!session) return;
+
+      // Pilot registered from mobile phone
+      if (session.activeAttendee && (!currentAttendee || currentAttendee.id !== session.activeAttendee.id)) {
+        setCurrentAttendee(session.activeAttendee);
+        setCurrentSessionAttendee(session.activeAttendee);
+        setShowRegistration(false);
+      }
+
+      // Controller tap pulse
+      if (session.flapTrigger && session.flapTrigger > lastFlapTriggerRef.current) {
+        lastFlapTriggerRef.current = session.flapTrigger;
+        triggerControllerFlap();
+      }
+    });
+
+    return () => unsub();
+  }, [config.settings.activeEventId, currentAttendee, triggerControllerFlap]);
+
+  // Broadcast game status and score to mobile phone controller
+  useEffect(() => {
+    const sessionId = config.settings.activeEventId;
+    if (!sessionId) return;
+
+    updateGameSession(sessionId, {
+      eventId: sessionId,
+      status: gameState === 'PLAYING' ? 'playing' : gameState === 'GAME_OVER' ? 'game_over' : 'ready',
+      currentScore: coinsCollected,
+      timeRemaining,
+      gameOver: gameState === 'GAME_OVER',
+    });
+  }, [gameState, coinsCollected, timeRemaining, config.settings.activeEventId]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     // If registration or instructions modal is active, or user is clicking form elements, let browser handle naturally
@@ -555,7 +684,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     setIsNewHighScore(false);
     setGameState('READY');
     sound.stopJetpack();
-    sound.stopBgm();
+    if (bgmActive) sound.setBgm(true);
   };
 
   const togglePause = () => {
@@ -563,12 +692,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       stateRef.current.gameState = 'PAUSED';
       stateRef.current.isThrusting = false;
       sound.stopJetpack();
-      sound.stopBgm();
       setGameState('PAUSED');
     } else if (stateRef.current.gameState === 'PAUSED') {
       stateRef.current.gameState = 'PLAYING';
       setGameState('PLAYING');
-      sound.setBgm(config.settings.bgmEnabled);
+      if (bgmActive) sound.setBgm(true);
     }
   };
 
@@ -577,7 +705,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     stateRef.current.gameOverReason = reason;
     stateRef.current.isThrusting = false;
     sound.stopJetpack();
-    sound.stopBgm();
     sound.playHit(config.settings.soundEnabled);
     setGameOverReason(reason);
     setGameState('GAME_OVER');
@@ -590,6 +717,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       if (updated) {
         setCurrentAttendee(updated);
       }
+      try {
+        const info = getEventHighScore(config.settings.activeEventId);
+        setEventHighScoreInfo(info);
+      } catch {}
     }
 
     if (finalCoins > highScore) {
@@ -2855,62 +2986,73 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         <div className="absolute inset-0 crt-overlay pointer-events-none z-10 opacity-70" />
       )}
 
-      {/* In-Game HUD */}
-      <div className="absolute top-0 left-0 right-0 p-3 sm:p-4 flex items-center justify-between z-40 pointer-events-none">
-        <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
-          <div className="bg-slate-900/85 backdrop-blur-md px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl border border-amber-500/40 shadow-lg flex items-center gap-2 sm:gap-2.5">
-            <span className="w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center text-[10px] text-slate-900 font-black">
+      {/* UNIFIED TOP ARCADE HEADER BAR */}
+      <header className="absolute top-0 left-0 right-0 z-40 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 px-2.5 sm:px-4 py-2 shadow-2xl flex items-center justify-between gap-2 pointer-events-auto select-none">
+        {/* Left Section: Score, Level, Score to Beat */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Score Chip */}
+          <div className="bg-slate-900/90 px-2.5 sm:px-3 py-1 rounded-xl border border-amber-500/40 shadow-sm flex items-center gap-1.5 sm:gap-2">
+            <span className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-amber-400 flex items-center justify-center text-[10px] text-slate-950 font-black shrink-0">
               {isMagicTheme ? '⚡' : '★'}
             </span>
-            <span className="text-[11px] sm:text-xs font-bold text-slate-300 uppercase tracking-wider">
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-300 uppercase tracking-wider hidden xs:inline">
               {isMagicTheme ? 'Snitches' : 'Score'}
             </span>
-            <span className="text-xl sm:text-2xl font-black text-amber-300 font-mono-num leading-none">{coinsCollected}</span>
+            <span className="text-sm sm:text-base font-black text-amber-300 font-mono-num leading-none">
+              {coinsCollected}
+            </span>
           </div>
 
-          <div className="bg-slate-900/80 backdrop-blur-md px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-slate-700/60 shadow-lg flex items-center gap-1.5">
-            <span className="text-[10px] sm:text-[11px] font-semibold text-slate-400">LVL</span>
-            <span className="text-xs sm:text-sm font-bold text-cyan-400 font-mono-num">{currentLevel}</span>
+          {/* Level Badge */}
+          <div className="bg-slate-900/90 px-2 sm:px-2.5 py-1 rounded-xl border border-slate-700/70 shadow-sm flex items-center gap-1">
+            <span className="text-[10px] font-semibold text-slate-400">LVL</span>
+            <span className="text-xs sm:text-sm font-bold text-cyan-400 font-mono-num">
+              {currentLevel}
+            </span>
+          </div>
+
+          {/* Score to Beat */}
+          <div className="hidden sm:flex bg-slate-900/90 px-2.5 py-1 rounded-xl border border-amber-500/30 shadow-sm items-center gap-1.5 text-xs">
+            <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="text-[10px] text-slate-400 font-bold uppercase">To Beat:</span>
+            <span className="text-xs font-black text-amber-300 font-mono-num">
+              {Math.max(eventHighScoreInfo.score, highScore)}
+            </span>
           </div>
         </div>
 
-        {/* Center Timer Bar */}
+        {/* Center Section: Countdown Timer */}
         {(config.settings.enableTimer ?? true) && (
-          <div className="flex flex-col items-center max-w-[130px] sm:max-w-[200px] md:max-w-[240px] w-full pointer-events-auto px-1 sm:px-2">
+          <div className="flex flex-col items-center justify-center min-w-[110px] sm:min-w-[140px] max-w-[190px]">
             <div
-              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 py-0.5 rounded-full backdrop-blur-md border shadow-md mb-1 transition-all ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 py-0.5 rounded-full border shadow-sm text-xs transition-all ${
                 timeRemaining <= 10
-                  ? 'bg-rose-950/90 border-rose-500/70 shadow-rose-500/30 animate-pulse'
-                  : 'bg-slate-900/85 border-slate-700/60'
+                  ? 'bg-rose-950/90 border-rose-500/80 text-rose-300 animate-pulse'
+                  : 'bg-slate-900/90 border-slate-700 text-slate-200'
               }`}
             >
-              <Clock className={`w-3.5 h-3.5 ${timeRemaining <= 10 ? 'text-rose-400' : 'text-amber-400'}`} />
-              <span className="text-[10px] sm:text-xs font-bold text-slate-300 uppercase tracking-wider hidden xs:inline">Time</span>
-              <span
-                className={`text-xs sm:text-sm font-black font-mono-num ${
-                  timeRemaining <= 10 ? 'text-rose-300' : 'text-amber-300'
-                }`}
-              >
+              <Clock className={`w-3.5 h-3.5 ${timeRemaining <= 10 ? 'text-rose-400' : 'text-amber-400'} shrink-0`} />
+              <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline text-slate-400">
+                Time
+              </span>
+              <span className={`text-xs sm:text-sm font-black font-mono-num ${
+                timeRemaining <= 10 ? 'text-rose-300' : 'text-amber-300'
+              }`}>
                 {Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}
               </span>
-              {(config.settings.addTimeOnCoin ?? true) && (
-                <span className="text-[9px] font-bold text-emerald-400 hidden md:inline ml-0.5">
-                  (+{config.settings.timeBonusSeconds ?? 2}s/coin)
-                </span>
-              )}
             </div>
 
-            {/* Depleting progress bar */}
-            <div className="w-full h-1.5 sm:h-2 rounded-full bg-slate-950/90 border border-slate-800 overflow-hidden shadow-inner p-0.5">
+            {/* Micro timer bar */}
+            <div className="w-full h-1 rounded-full bg-slate-950 border border-slate-800 overflow-hidden mt-1">
               <div
                 className={`h-full rounded-full transition-all duration-300 ${
                   timeRemaining <= 10
-                    ? 'bg-gradient-to-r from-rose-600 via-red-500 to-rose-400 animate-pulse'
+                    ? 'bg-rose-500'
                     : timeRemaining <= 25
-                    ? 'bg-gradient-to-r from-amber-600 to-yellow-400'
+                    ? 'bg-amber-400'
                     : isMagicTheme
-                    ? 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300'
-                    : 'bg-gradient-to-r from-cyan-500 via-blue-400 to-emerald-400'
+                    ? 'bg-amber-500'
+                    : 'bg-cyan-400'
                 }`}
                 style={{
                   width: `${Math.max(
@@ -2926,61 +3068,210 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
           </div>
         )}
 
-        {/* Action Controls: Help, Pause & Fullscreen */}
-        <div className="flex items-center gap-2 pointer-events-auto">
+        {/* Right Section: Audio, Leaderboard, How to Play, Fullscreen */}
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 relative">
+          {/* Audio Master Volume Toggle & Popover Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsAudioPopoverOpen((prev) => !prev);
+            }}
+            className={`p-1.5 sm:p-2 rounded-xl border transition-all shadow-sm cursor-pointer flex items-center gap-1.5 ${
+              isAudioPopoverOpen || masterVol === 0 || !bgmActive
+                ? 'bg-amber-950/90 text-amber-300 border-amber-500/50'
+                : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/70'
+            }`}
+            title="Audio & Master Volume"
+            aria-label="Audio Controls"
+          >
+            {masterVol === 0 || (!bgmActive && sfxVol === 0) ? (
+              <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400" />
+            )}
+            <span className="text-[11px] font-bold hidden xl:inline">Audio</span>
+          </button>
+
+          {/* Event Leaderboard Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowLeaderboardModal(true);
+            }}
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-amber-300 hover:text-white border border-slate-700/70 transition-colors shadow-sm cursor-pointer flex items-center gap-1.5"
+            title="Event Leaderboard & Highscores"
+            aria-label="Event Leaderboard"
+          >
+            <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
+            <span className="text-[11px] font-bold hidden md:inline">Leaderboard</span>
+          </button>
+
           {/* How to Play Guide Button */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               setShowInstructions(true);
             }}
-            className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 hover:bg-slate-800 text-amber-300 hover:text-white border border-slate-700/60 transition-colors shadow-md cursor-pointer flex items-center gap-1.5"
-            title="How to Play / Instructions"
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-amber-300 hover:text-white border border-slate-700/70 transition-colors shadow-sm cursor-pointer flex items-center gap-1.5"
+            title="How to Play"
             aria-label="How to Play"
           >
-            <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />
-            <span className="text-xs font-bold hidden md:inline">How to Play</span>
+            <HelpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
+            <span className="text-[11px] font-bold hidden md:inline">How to Play</span>
           </button>
 
-          {/* Pause Button */}
+          {/* Pause Button (Visible during active flight) */}
           {gameState === 'PLAYING' && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 togglePause();
               }}
-              className="p-2 sm:p-2.5 rounded-xl bg-slate-900/85 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 transition-colors shadow-md cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/70 transition-colors shadow-sm cursor-pointer"
               title="Pause (P or Esc)"
             >
-              <Pause className="w-4 h-4" />
+              <Pause className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           )}
 
-          {/* Full Screen Toggle Button */}
+          {/* Fullscreen Toggle */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               toggleFullscreen();
             }}
-            className={`p-2 sm:p-2.5 rounded-xl backdrop-blur-md border transition-all shadow-md cursor-pointer flex items-center gap-1.5 ${
+            className={`p-1.5 sm:p-2 rounded-xl border transition-all shadow-sm cursor-pointer flex items-center gap-1.5 ${
               isFullscreen
-                ? 'bg-amber-950/85 hover:bg-amber-900 text-amber-300 border-amber-500/50 shadow-amber-500/20'
-                : 'bg-slate-900/85 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/60 shadow-black/40'
+                ? 'bg-amber-950/85 hover:bg-amber-900 text-amber-300 border-amber-500/50'
+                : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/70'
             }`}
             title={isFullscreen ? 'Exit Full Screen (F or Esc)' : 'Full Screen (F)'}
             aria-label={isFullscreen ? 'Exit Full Screen' : 'Enter Full Screen'}
           >
             {isFullscreen ? (
-              <Minimize2 className="w-4 h-4 text-amber-400 shrink-0" />
+              <Minimize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
             ) : (
-              <Maximize2 className="w-4 h-4 text-cyan-400 shrink-0" />
+              <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400 shrink-0" />
             )}
-            <span className="text-xs font-bold hidden sm:inline">
-              {isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+            <span className="text-[11px] font-bold hidden sm:inline">
+              {isFullscreen ? 'Exit' : 'Full Screen'}
             </span>
           </button>
+
+          {/* Audio Master Volume Dropdown Popover */}
+          {isAudioPopoverOpen && (
+            <div
+              className="absolute top-12 right-0 z-50 w-72 bg-slate-950/95 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur-md text-left animate-fadeIn pointer-events-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs font-black uppercase text-white tracking-wider">Audio Controls</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAudioPopoverOpen(false)}
+                  className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Master Volume Slider */}
+              <div className="mb-3">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-slate-300 font-bold flex items-center gap-1.5">
+                    <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Master Volume</span>
+                  </span>
+                  <span className="font-mono text-cyan-300 font-bold text-[11px]">
+                    {Math.round(masterVol * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={masterVol}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setMasterVol(val);
+                    sound.setMasterVolume(val);
+                  }}
+                  className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                />
+              </div>
+
+              {/* Music BGM Slider & Toggle */}
+              <div className="mb-3">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-slate-300 font-bold">Background Music</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-cyan-300 font-bold text-[11px]">
+                      {bgmActive ? `${Math.round(bgmVol * 100)}%` : 'MUTED'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !bgmActive;
+                        setBgmActive(next);
+                        sound.setBgm(next);
+                      }}
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded cursor-pointer ${
+                        bgmActive ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                      }`}
+                    >
+                      {bgmActive ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={bgmVol}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setBgmVol(val);
+                    sound.setBgmVolume(val);
+                    if (!bgmActive && val > 0) {
+                      setBgmActive(true);
+                      sound.setBgm(true);
+                    }
+                  }}
+                  className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                />
+              </div>
+
+              {/* Sound Effects SFX Slider */}
+              <div>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-slate-300 font-bold">Sound Effects</span>
+                  <span className="font-mono text-cyan-300 font-bold text-[11px]">
+                    {Math.round(sfxVol * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={sfxVol}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setSfxVol(val);
+                    sound.setSfxVolume(val);
+                  }}
+                  className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                />
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      </header>
 
       {/* Level Up Banner */}
       {levelUpBanner && (
@@ -2988,6 +3279,67 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
           <div className="px-6 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-slate-950 font-extrabold text-sm uppercase tracking-wider shadow-xl border border-white/40 flex items-center gap-2">
             <Zap className="w-4 h-4 text-slate-950" />
             <span>{levelUpBanner}</span>
+          </div>
+        </div>
+      )}
+
+      {/* QR CODE REGISTRATION & CONTROLLER CARD (When QR mode is active in Admin settings) */}
+      {isQrMode && gameState === 'READY' && !currentAttendee && !showRegistration && (
+        <div
+          className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden animate-fadeIn select-none pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="relative max-w-sm w-full bg-slate-950/95 border-2 border-cyan-400/80 rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center">
+            {/* Top Tag */}
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-500/50 text-cyan-300 text-[11px] font-mono font-bold mb-3">
+              <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+              <span>SCAN TO REGISTER &amp; FLY</span>
+            </div>
+
+            <h3 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wider mb-1">
+              Mobile Flight Controller
+            </h3>
+            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+              Scan with your phone to register and turn your device into the live flight controller button!
+            </p>
+
+            {/* QR Code Container */}
+            <div className="p-3.5 bg-white rounded-2xl shadow-2xl border-2 border-cyan-400/60 mb-4 transition-transform hover:scale-105">
+              <QRCodeSVG
+                value={controllerUrl}
+                size={180}
+                level="H"
+                includeMargin={false}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-[11px] font-mono text-cyan-300 mb-4 animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-cyan-400" />
+              <span>Awaiting pilot to scan &amp; connect...</span>
+            </div>
+
+            {/* Optional manual on-screen register or admin bypass */}
+            <div className="grid grid-cols-2 gap-2 w-full pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowRegistration(true)}
+                className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Screen Register
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAdminConfirmModal(true)}
+                className="py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Play as Admin
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-3 text-[10px] text-slate-500 uppercase tracking-widest font-bold">
+              {config.settings.popupFooterText || 'Presented by TIM'}
+            </div>
           </div>
         </div>
       )}
@@ -3018,195 +3370,301 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
             onTouchEnd={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header / Event Name Tag & Fullscreen Action */}
+            {/* Header / Event Name Tag, Admin Bypass & Fullscreen Action */}
             <div>
               <div className="flex items-center justify-between mb-2 gap-2">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/30 truncate max-w-[150px] sm:max-w-none">
-                  {config.settings.activeEventName || 'Event Check-In'}
-                </span>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/30 truncate max-w-[140px] sm:max-w-none">
+                    {config.settings.activeEventName || 'Event Check-In'}
+                  </span>
+                  {eventHighScoreInfo.score > 0 && (
+                    <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/30">
+                      <Trophy className="w-3 h-3 text-amber-400" />
+                      <span>To Beat: {eventHighScoreInfo.score}</span>
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Play as Admin Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowAdminConfirmModal(true);
+                    }}
+                    className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                    title="Play as Admin without attendee registration"
+                  >
+                    <Shield className="w-3 h-3 text-amber-400" />
+                    <span>Play as Admin</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleFullscreen();
                     }}
-                    className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 transition-colors flex items-center gap-1.5 text-[10px] sm:text-xs font-bold cursor-pointer shadow-sm"
+                    className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 transition-colors flex items-center gap-1 text-[10px] font-bold cursor-pointer shadow-sm"
                     title={isFullscreen ? 'Exit Full Screen (F or Esc)' : 'Full Screen (F)'}
                   >
                     {isFullscreen ? (
-                      <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+                      <Minimize2 className="w-3 h-3 text-amber-400" />
                     ) : (
-                      <Maximize2 className="w-3.5 h-3.5 text-cyan-400" />
+                      <Maximize2 className="w-3 h-3 text-cyan-400" />
                     )}
-                    <span>{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</span>
+                    <span className="hidden sm:inline">{isFullscreen ? 'Exit' : 'Full'}</span>
                   </button>
-                  <span className="text-[10px] font-semibold text-slate-400 hidden sm:flex items-center gap-1">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Official Register</span>
-                  </span>
                 </div>
               </div>
 
               <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-wider leading-tight">
                 {config.settings.registrationTitle || (isMagicTheme ? 'Magic Academy Check-In' : 'Pilot Registration & Check-In')}
               </h3>
-              <p className="text-[11px] text-slate-400 leading-tight mt-0.5 mb-3.5">
+              <p className="text-[11px] text-slate-400 leading-tight mt-0.5 mb-2.5">
                 {config.settings.registrationSubtitle || 'Fill in your details below to save your flight run & tournament scores for this event.'}
               </p>
             </div>
 
-            {/* Non-Scrollable Form Grid */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (!regName.trim() || !regEmail.trim()) {
-                  setRegError('Please provide your name and email address.');
-                  return;
-                }
-                setRegError(null);
-                const reg = saveRegistration({
-                  name: regName.trim(),
-                  company: regCompany.trim() || 'Attendee',
-                  email: regEmail.trim(),
-                  contactNumber: regContactNumber.trim() || '—',
-                  position: regPosition.trim() || 'Guest',
-                  eventId: config.settings.activeEventId,
-                });
-                setCurrentAttendee(reg);
-                setShowRegistration(false);
-              }}
-              onKeyDown={(e) => e.stopPropagation()}
-              onKeyUp={(e) => e.stopPropagation()}
-              className="space-y-2.5 mb-1 select-text"
-            >
-              {regError && (
-                <div className="text-[11px] text-rose-300 bg-rose-950/60 border border-rose-500/40 rounded-lg px-2.5 py-1">
-                  {regError}
+            {/* Duplicate Attendee Alert */}
+            {duplicateAttendeeAlert && (
+              <div className="mb-2 p-2.5 rounded-2xl bg-amber-950/80 border border-amber-500/60 text-left animate-fadeIn">
+                <div className="flex items-center gap-1.5 text-amber-300 text-[11px] font-bold mb-1">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Already Registered for Active Event</span>
                 </div>
-              )}
-
-              {/* Row 1: Name & Position */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                    <User className="w-3 h-3 text-cyan-400" />
-                    <span>Full Name *</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    autoFocus
-                    placeholder="e.g. Alex Morgan"
-                    value={regName}
-                    onChange={(e) => setRegName(e.target.value)}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    onKeyUp={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                    <Briefcase className="w-3 h-3 text-cyan-400" />
-                    <span>Position</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. IT Specialist"
-                    value={regPosition}
-                    onChange={(e) => setRegPosition(e.target.value)}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    onKeyUp={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
-                  />
+                <p className="text-[11px] text-slate-200 mb-2 leading-tight">
+                  <strong className="text-white">{duplicateAttendeeAlert.name}</strong> ({duplicateAttendeeAlert.company || 'Attendee'}) already exists for this event. Continue with this registered profile?
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentAttendee(duplicateAttendeeAlert);
+                      setCurrentSessionAttendee(duplicateAttendeeAlert);
+                      setDuplicateAttendeeAlert(null);
+                      setShowRegistration(false);
+                    }}
+                    className="flex-1 py-1 px-3 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-black uppercase tracking-wider cursor-pointer shadow-sm transition-all text-center"
+                  >
+                    Continue as {duplicateAttendeeAlert.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDuplicateAttendeeAlert(null)}
+                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold cursor-pointer"
+                  >
+                    Edit Details
+                  </button>
                 </div>
               </div>
+            )}
 
-              {/* Row 2: Company & Contact Number */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                    <Building className="w-3 h-3 text-cyan-400" />
-                    <span>Company</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. TIM Corporation"
-                    value={regCompany}
-                    onChange={(e) => setRegCompany(e.target.value)}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    onKeyUp={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
-                  />
-                </div>
+            {/* Non-Scrollable Form Grid with Customizable Fields */}
+            {(() => {
+              const regFields = config.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS;
 
-                <div>
-                  <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                    <Phone className="w-3 h-3 text-cyan-400" />
-                    <span>Contact Number</span>
-                  </label>
-                  <input
-                    type="tel"
-                    placeholder="e.g. +63 912 345 6789"
-                    value={regContactNumber}
-                    onChange={(e) => setRegContactNumber(e.target.value)}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    onKeyUp={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors font-mono cursor-text select-text pointer-events-auto"
-                  />
-                </div>
-              </div>
+              return (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
 
-              {/* Row 3: Email */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                  <Mail className="w-3 h-3 text-cyan-400" />
-                  <span>Email Address *</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. alex.morgan@company.com"
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
+                    // Validation for Name (always required)
+                    if (!regName.trim()) {
+                      setRegError('Full Name is required.');
+                      return;
+                    }
+
+                    // Validation for optional customizable fields
+                    if (regFields.company.show && regFields.company.required && !regCompany.trim()) {
+                      setRegError('Company is required.');
+                      return;
+                    }
+                    if (regFields.email.show && regFields.email.required && !regEmail.trim()) {
+                      setRegError('Email Address is required.');
+                      return;
+                    }
+                    if (regFields.contactNumber.show && regFields.contactNumber.required && !regContactNumber.trim()) {
+                      setRegError('Contact Number is required.');
+                      return;
+                    }
+                    if (regFields.position.show && regFields.position.required && !regPosition.trim()) {
+                      setRegError('Position is required.');
+                      return;
+                    }
+
+                    // Duplicate attendee check for this active event
+                    const existing = checkAttendeeExists(
+                      config.settings.activeEventId,
+                      regEmail.trim(),
+                      regName.trim()
+                    );
+                    if (existing) {
+                      setDuplicateAttendeeAlert(existing);
+                      return;
+                    }
+
+                    setRegError(null);
+                    setDuplicateAttendeeAlert(null);
+                    const reg = saveRegistration({
+                      name: regName.trim(),
+                      company: regCompany.trim() || 'Attendee',
+                      email: regEmail.trim() || `${regName.trim().toLowerCase().replace(/\s+/g, '.')}@event.local`,
+                      contactNumber: regContactNumber.trim() || '—',
+                      position: regPosition.trim() || 'Guest',
+                      eventId: config.settings.activeEventId,
+                    });
+                    setCurrentAttendee(reg);
+                    setCurrentSessionAttendee(reg);
+                    setShowRegistration(false);
+                  }}
                   onKeyDown={(e) => e.stopPropagation()}
                   onKeyUp={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
-                />
-              </div>
+                  className="space-y-2 mb-1 select-text"
+                >
+                  {regError && (
+                    <div className="text-[11px] text-rose-300 bg-rose-950/60 border border-rose-500/40 rounded-lg px-2.5 py-1">
+                      {regError}
+                    </div>
+                  )}
 
-              {/* Submit Action */}
-              <button
-                type="submit"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                className={`w-full mt-3 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 transform hover:-translate-y-0.5 ${
-                  isMagicTheme
-                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-amber-500/20'
-                    : 'bg-gradient-to-r from-cyan-400 via-sky-400 to-purple-500 hover:from-cyan-300 hover:to-purple-400 text-slate-950 shadow-cyan-500/20'
-                }`}
-              >
-                <UserCheck className="w-4 h-4" />
-                <span>Confirm Check-In & Enter Flight</span>
-              </button>
-            </form>
+                  {/* Grid for Name & Position */}
+                  <div className={`grid gap-2 ${regFields.position.show ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                        <User className="w-3 h-3 text-cyan-400" />
+                        <span>Full Name *</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        autoFocus
+                        placeholder="e.g. Alex Morgan"
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onKeyUp={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
+                      />
+                    </div>
+
+                    {regFields.position.show && (
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                          <Briefcase className="w-3 h-3 text-cyan-400" />
+                          <span>Position {regFields.position.required && '*'}</span>
+                        </label>
+                        <input
+                          type="text"
+                          required={regFields.position.required}
+                          placeholder="e.g. IT Specialist"
+                          value={regPosition}
+                          onChange={(e) => setRegPosition(e.target.value)}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          onKeyUp={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Grid for Company & Contact Number */}
+                  {(regFields.company.show || regFields.contactNumber.show) && (
+                    <div className={`grid gap-2 ${regFields.company.show && regFields.contactNumber.show ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      {regFields.company.show && (
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                            <Building className="w-3 h-3 text-cyan-400" />
+                            <span>Company {regFields.company.required && '*'}</span>
+                          </label>
+                          <input
+                            type="text"
+                            required={regFields.company.required}
+                            placeholder="e.g. TIM Corporation"
+                            value={regCompany}
+                            onChange={(e) => setRegCompany(e.target.value)}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            onKeyUp={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
+                          />
+                        </div>
+                      )}
+
+                      {regFields.contactNumber.show && (
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-cyan-400" />
+                            <span>Contact {regFields.contactNumber.required && '*'}</span>
+                          </label>
+                          <input
+                            type="tel"
+                            required={regFields.contactNumber.required}
+                            placeholder="e.g. +63 912 345 6789"
+                            value={regContactNumber}
+                            onChange={(e) => setRegContactNumber(e.target.value)}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            onKeyUp={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors font-mono cursor-text select-text pointer-events-auto"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Email Address */}
+                  {regFields.email.show && (
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                        <Mail className="w-3 h-3 text-cyan-400" />
+                        <span>Email Address {regFields.email.required && '*'}</span>
+                      </label>
+                      <input
+                        type="email"
+                        required={regFields.email.required}
+                        placeholder="e.g. alex.morgan@company.com"
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onKeyUp={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition-colors cursor-text select-text pointer-events-auto"
+                      />
+                    </div>
+                  )}
+
+                  {/* Submit Action */}
+                  <button
+                    type="submit"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`w-full mt-2 py-2.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 transform hover:-translate-y-0.5 ${
+                      isMagicTheme
+                        ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-amber-500/20'
+                        : 'bg-gradient-to-r from-cyan-400 via-sky-400 to-purple-500 hover:from-cyan-300 hover:to-purple-400 text-slate-950 shadow-cyan-500/20'
+                    }`}
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    <span>Confirm Check-In & Enter Flight</span>
+                  </button>
+                </form>
+              );
+            })()}
 
             {/* Presented by TIM Footer */}
             <div className="mt-2 pt-2 border-t border-slate-800/80 text-center flex items-center justify-center gap-1.5 select-none">
@@ -3214,6 +3672,198 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                 {config.settings.popupFooterText || 'Presented by TIM'}
               </span>
             </div>
+          </div>
+
+          {/* PLAY AS ADMIN CONFIRMATION MODAL */}
+          {showAdminConfirmModal && (
+            <div
+              className="absolute inset-0 z-60 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-slate-900 border border-amber-500/60 rounded-3xl p-5 sm:p-6 max-w-sm w-full text-center shadow-2xl relative">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center mx-auto mb-3 shadow-inner">
+                  <Shield className="w-6 h-6" />
+                </div>
+                <h4 className="text-base sm:text-lg font-black text-white uppercase tracking-wider mb-1">
+                  Play as Admin?
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed mb-4">
+                  You don't need to register. You can fly right now to test flight mechanics. When flight ends, the game returns directly to Registration.
+                </p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminConfirmModal(false)}
+                    className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const adminPilot: AttendeeRegistration = {
+                        id: `admin_${Date.now()}`,
+                        name: 'Admin Pilot',
+                        company: 'Event Administration',
+                        email: 'admin@event.local',
+                        contactNumber: '—',
+                        position: 'Administrator',
+                        eventId: config.settings.activeEventId,
+                        bestScore: 0,
+                        coins: 0,
+                        totalRuns: 0,
+                        registeredAt: new Date().toISOString(),
+                      };
+                      setCurrentAttendee(adminPilot);
+                      setCurrentSessionAttendee(adminPilot);
+                      setShowAdminConfirmModal(false);
+                      setShowRegistration(false);
+                    }}
+                    className="py-2.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md"
+                  >
+                    Yes, Play Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* EVENT LEADERBOARD & HIGH SCORES MODAL */}
+      {showLeaderboardModal && (
+        <div
+          className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-hidden animate-fadeIn select-none pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="relative max-w-lg w-full bg-slate-950/95 border border-amber-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[92%] overflow-hidden">
+            {/* Top Close Button */}
+            <button
+              onClick={() => setShowLeaderboardModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer border border-slate-800"
+              title="Close Leaderboard"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-3 pr-10">
+              <div className="w-10 h-10 rounded-2xl bg-amber-400/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                <Trophy className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-white uppercase tracking-wider leading-tight">
+                    Event Leaderboard
+                  </h3>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-950/90 text-purple-300 border border-purple-500/30 truncate max-w-[150px]">
+                    {config.settings.activeEventName || 'Active Event'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Top pilot rankings and tournament scores for this event
+                </p>
+              </div>
+            </div>
+
+            {/* Highscore to Beat Banner */}
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/60 via-yellow-950/30 to-slate-900 border border-amber-500/40 mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Award className="w-4 h-4 text-amber-400 shrink-0" />
+                <div>
+                  <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider block">
+                    Highscore to Beat
+                  </span>
+                  <div className="text-xs font-bold text-white">
+                    {eventHighScoreInfo.score > 0
+                      ? `${eventHighScoreInfo.score} pts by ${eventHighScoreInfo.holderName}`
+                      : 'No scores logged yet'}
+                  </div>
+                </div>
+              </div>
+              <span className="text-xl font-black text-amber-300 font-mono-num">
+                {eventHighScoreInfo.score}
+              </span>
+            </div>
+
+            {/* Leaderboard Table */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 custom-scrollbar max-h-72">
+              {(() => {
+                const entries = getEventLeaderboard(config.settings.activeEventId);
+                if (entries.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-slate-400">
+                      <Trophy className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-50" />
+                      <p className="text-xs font-semibold">No flight records logged yet for this event.</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Register and take flight to claim #1 rank!</p>
+                    </div>
+                  );
+                }
+
+                return entries.map((entry) => {
+                  const isTop1 = entry.rank === 1;
+                  const isTop2 = entry.rank === 2;
+                  const isTop3 = entry.rank === 3;
+
+                  return (
+                    <div
+                      key={entry.attendeeId}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between text-xs transition-colors ${
+                        isTop1
+                          ? 'bg-amber-950/40 border-amber-500/50 text-amber-100'
+                          : isTop2
+                          ? 'bg-slate-900/80 border-slate-600/50 text-slate-100'
+                          : isTop3
+                          ? 'bg-amber-900/20 border-amber-700/40 text-amber-200'
+                          : 'bg-slate-900/50 border-slate-800 text-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center font-mono font-bold text-xs shrink-0 ${
+                            isTop1
+                              ? 'bg-amber-400 text-slate-950 shadow-sm'
+                              : isTop2
+                              ? 'bg-slate-300 text-slate-950'
+                              : isTop3
+                              ? 'bg-amber-700 text-white'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {entry.rank}
+                        </span>
+                        <div className="min-w-0 truncate">
+                          <div className="font-bold text-white truncate flex items-center gap-1.5">
+                            <span>{entry.name}</span>
+                            {isTop1 && <span className="text-[10px] text-amber-400">👑</span>}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {entry.company || 'Attendee'} {entry.position ? `• ${entry.position}` : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0 ml-2">
+                        <span className="text-sm font-black text-amber-300 font-mono-num block">
+                          {entry.score} pts
+                        </span>
+                        <span className="text-[9px] text-slate-500 font-mono">
+                          {entry.date ? new Date(entry.date).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Close Action */}
+            <button
+              onClick={() => setShowLeaderboardModal(false)}
+              className="mt-3 w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-colors cursor-pointer"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
@@ -3519,9 +4169,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
 
       {/* GAME OVER Screen */}
       {gameState === 'GAME_OVER' && (() => {
-        const prizeTiers = (config.settings.prizeTiers || []).slice().sort((a, b) => b.minScore - a.minScore);
-        const wonPrize = prizeTiers.find((tier) => coinsCollected >= tier.minScore);
-        const nextPrize = (config.settings.prizeTiers || []).slice().sort((a, b) => a.minScore - b.minScore).find((tier) => coinsCollected < tier.minScore);
+        const prizeTiers = (config.settings.prizeTiers || []).slice();
+        const wonPrize =
+          prizeTiers.find((tier) => {
+            const minOk = coinsCollected >= tier.minScore;
+            const maxOk = tier.maxScore != null ? coinsCollected <= tier.maxScore : true;
+            return minOk && maxOk;
+          }) ||
+          prizeTiers
+            .slice()
+            .sort((a, b) => b.minScore - a.minScore)
+            .find((tier) => coinsCollected >= tier.minScore);
+
+        const nextPrize = prizeTiers
+          .filter((tier) => tier.minScore > coinsCollected)
+          .sort((a, b) => a.minScore - b.minScore)[0];
         const bestScore = Math.max(coinsCollected, highScore);
 
         return (
@@ -3579,33 +4241,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                     <span className="text-[9px] font-mono font-bold text-purple-300 block uppercase tracking-wider">
                       Official Event Record
                     </span>
-                    <div className="text-xs font-bold text-white truncate max-w-[200px]">
+                    <div className="text-xs font-bold text-white truncate max-w-[280px]">
                       {currentAttendee.name}
                       {currentAttendee.company && (
                         <span className="text-slate-400 font-normal"> &bull; {currentAttendee.company}</span>
                       )}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearCurrentSessionAttendee();
-                      setCurrentAttendee(null);
-                      setRegName('');
-                      setRegCompany('');
-                      setRegEmail('');
-                      setRegContactNumber('');
-                      setRegPosition('');
-                      setShowRegistration(true);
-                      resetToReady();
-                    }}
-                    className="px-2 py-1 rounded-lg bg-purple-900/70 hover:bg-purple-800 text-[10px] font-bold text-purple-200 border border-purple-500/40 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-                    title="Register next attendee"
-                  >
-                    <LogOut className="w-3 h-3" />
-                    <span>Next Pilot</span>
-                  </button>
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-0.5 rounded-lg">
+                    ✓ Logged
+                  </span>
                 </div>
               )}
 
@@ -3647,12 +4292,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                         className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full text-slate-950 font-mono tracking-tight"
                         style={{ backgroundColor: wonPrize.badgeColor || '#f59e0b' }}
                       >
-                        Won &bull; {wonPrize.minScore}+ Score
+                        {wonPrize.maxScore != null
+                          ? `Won • ${wonPrize.minScore} - ${wonPrize.maxScore} pts`
+                          : `Won • ${wonPrize.minScore}+ pts`}
                       </span>
                     ) : (
                       nextPrize && (
                         <span className="text-[9px] font-semibold text-slate-400 font-mono">
-                          Tier at {nextPrize.minScore} {isMagicTheme ? 'snitches' : 'coins'}
+                          {nextPrize.maxScore != null
+                            ? `Tier: ${nextPrize.minScore} - ${nextPrize.maxScore} ${isMagicTheme ? 'snitches' : 'coins'}`
+                            : `Tier at ${nextPrize.minScore}+ ${isMagicTheme ? 'snitches' : 'coins'}`}
                         </span>
                       )
                     )}
@@ -3696,16 +4345,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                 </div>
               )}
 
-              {/* FLY AGAIN BUTTON */}
+              {/* REGISTER (NEW ATTENDEE) ACTION - Always returns to Registration */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  clearCurrentSessionAttendee();
+                  setCurrentAttendee(null);
+                  setRegName('');
+                  setRegCompany('');
+                  setRegEmail('');
+                  setRegContactNumber('');
+                  setRegPosition('');
+                  setRegError(null);
+                  setDuplicateAttendeeAlert(null);
                   resetToReady();
+                  if (!isQrMode) {
+                    setShowRegistration(true);
+                  }
                 }}
-                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg hover:shadow-amber-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5"
+                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-cyan-400 via-sky-400 to-purple-500 hover:from-cyan-300 hover:to-purple-400 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg hover:shadow-cyan-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5"
               >
-                <RotateCcw className="w-4 h-4" />
-                <span>Fly Again</span>
+                <UserPlus className="w-4 h-4" />
+                <span>Register</span>
               </button>
             </div>
           </div>

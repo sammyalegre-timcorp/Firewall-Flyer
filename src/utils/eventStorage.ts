@@ -1,4 +1,4 @@
-import { AttendeeRegistration, EventSession } from '../types/game';
+import { AttendeeRegistration, EventSession, EventLeaderboardEntry } from '../types/game';
 import {
   saveAttendeeToFirestore,
   updateAttendeeScoreInFirestore,
@@ -96,6 +96,60 @@ export function getRegistrationsForEvent(eventId: string): AttendeeRegistration[
   return all.filter((r) => r.eventId === eventId);
 }
 
+// Check for existing attendee registration in active event
+export function checkAttendeeExists(
+  eventId: string,
+  email?: string,
+  name?: string
+): AttendeeRegistration | null {
+  const attendees = getRegistrationsForEvent(eventId);
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanName = (name || '').trim().toLowerCase();
+
+  if (cleanEmail) {
+    const found = attendees.find(
+      (a) => (a.email || '').trim().toLowerCase() === cleanEmail
+    );
+    if (found) return found;
+  }
+
+  if (cleanName) {
+    const found = attendees.find(
+      (a) => (a.name || '').trim().toLowerCase() === cleanName
+    );
+    if (found) return found;
+  }
+
+  return null;
+}
+
+// Get top leaderboard for specific event
+export function getEventLeaderboard(eventId: string): EventLeaderboardEntry[] {
+  const attendees = getRegistrationsForEvent(eventId);
+  const sorted = attendees
+    .filter((a) => (a.bestScore || 0) > 0)
+    .sort((a, b) => (b.bestScore || 0) - (a.bestScore || 0));
+
+  return sorted.map((a, idx) => ({
+    rank: idx + 1,
+    attendeeId: a.id,
+    name: a.name,
+    company: a.company || 'Attendee',
+    position: a.position || '',
+    score: a.bestScore,
+    date: a.lastPlayedAt || a.registeredAt,
+  }));
+}
+
+// Get highscore to beat for specific event
+export function getEventHighScore(eventId: string): { score: number; holderName: string } {
+  const lb = getEventLeaderboard(eventId);
+  if (lb.length > 0 && lb[0].score > 0) {
+    return { score: lb[0].score, holderName: lb[0].name };
+  }
+  return { score: 0, holderName: 'None' };
+}
+
 export function mergeRemoteAttendees(remoteAttendees: AttendeeRegistration[]): AttendeeRegistration[] {
   if (!remoteAttendees || !Array.isArray(remoteAttendees)) return getAllRegistrations();
   
@@ -144,8 +198,14 @@ export function saveRegistration(data: {
   const activeId = data.eventId || getActiveEventId();
 
   // Check if already registered by email in this event
+  const cleanEmail = data.email.trim().toLowerCase();
+  const cleanName = data.name.trim().toLowerCase();
+
   const existingIndex = all.findIndex(
-    (r) => r.eventId === activeId && r.email.trim().toLowerCase() === data.email.trim().toLowerCase()
+    (r) =>
+      r.eventId === activeId &&
+      ((cleanEmail && r.email.trim().toLowerCase() === cleanEmail) ||
+        (cleanName && r.name.trim().toLowerCase() === cleanName))
   );
 
   let registration: AttendeeRegistration;
@@ -156,8 +216,9 @@ export function saveRegistration(data: {
       ...all[existingIndex],
       name: data.name.trim(),
       company: data.company.trim(),
-      contactNumber: data.contactNumber.trim(),
-      position: data.position.trim(),
+      email: data.email.trim() || all[existingIndex].email,
+      contactNumber: data.contactNumber.trim() || all[existingIndex].contactNumber,
+      position: data.position.trim() || all[existingIndex].position,
     };
     registration = all[existingIndex];
   } else {
@@ -190,6 +251,14 @@ export function saveRegistration(data: {
   });
 
   return registration;
+}
+
+export function setCurrentSessionAttendee(attendee: AttendeeRegistration): void {
+  try {
+    sessionStorage.setItem(CURRENT_ATTENDEE_SESSION_KEY, JSON.stringify(attendee));
+  } catch (err) {
+    console.error('Failed to set session attendee', err);
+  }
 }
 
 export function getCurrentSessionAttendee(): AttendeeRegistration | null {

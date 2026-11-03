@@ -101,14 +101,56 @@ export interface GameSettings {
   popupFooterText?: string; // Footer tag at bottom of popups (default "Presented by TIM")
   enablePrizes?: boolean; // Whether to award and display prizes on game over
   prizeTiers?: PrizeTier[]; // List of score thresholds and associated prizes
+  masterVolume?: number; // 0.0 to 1.0 (default 0.7)
+  bgmVolume?: number; // 0.0 to 1.0 (default 0.5)
+  sfxVolume?: number; // 0.0 to 1.0 (default 0.8)
+  enableQrController?: boolean; // When true, displays QR code to register and use phone as controller (suppresses on-screen registration)
+  registrationFields?: RegistrationFieldsSettings;
+}
+
+export interface GameSessionData {
+  sessionId: string;
+  eventId: string;
+  status: 'waiting' | 'ready' | 'playing' | 'game_over';
+  activeAttendee?: AttendeeRegistration | null;
+  flapTrigger: number;
+  lastFlapAt?: number;
+  currentScore?: number;
+  timeRemaining?: number;
+  gameOver?: boolean;
+  prizeWon?: string | null;
+  updatedAt?: string;
+}
+
+export interface RegistrationFieldConfig {
+  show: boolean;
+  required: boolean;
+}
+
+export interface RegistrationFieldsSettings {
+  company: RegistrationFieldConfig;
+  email: RegistrationFieldConfig;
+  contactNumber: RegistrationFieldConfig;
+  position: RegistrationFieldConfig;
 }
 
 export interface PrizeTier {
   id: string;
   minScore: number;
+  maxScore?: number | null; // e.g. 1-100, 101-150, or null for 151+
   prizeName: string;
   description?: string;
   badgeColor?: string;
+}
+
+export interface EventLeaderboardEntry {
+  rank: number;
+  attendeeId: string;
+  name: string;
+  company: string;
+  position?: string;
+  score: number;
+  date?: string;
 }
 
 export interface AppConfig {
@@ -157,4 +199,5 @@ export interface EventSession {
   description?: string;
   createdAt: string;
   isActive: boolean;
+  highScore?: number;
 }

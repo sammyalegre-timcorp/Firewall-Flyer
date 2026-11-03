@@ -49,6 +49,25 @@
         "eventId": { "type": "string", "maxLength": 128 }
       },
       "required": ["id", "playerName", "score", "coins", "date"]
+    },
+    "GameSession": {
+      "title": "GameSession",
+      "description": "Live session for QR code mobile controller sync",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "eventId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "maxLength": 50 },
+        "activeAttendee": { "type": "object" },
+        "flapTrigger": { "type": "number" },
+        "lastFlapAt": { "type": "number" },
+        "currentScore": { "type": "number" },
+        "timeRemaining": { "type": "number" },
+        "gameOver": { "type": "boolean" },
+        "prizeWon": { "type": "string", "maxLength": 200 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["sessionId", "eventId"]
     }
   },
   "firestore": {
@@ -63,6 +82,10 @@
     "/scores/{scoreId}": {
       "schema": { "$ref": "#/entities/ScoreEntry" },
       "description": "Global and event score log entries"
+    },
+    "/game_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/GameSession" },
+      "description": "Active game sessions with real-time mobile controller input"
     }
   }
 }

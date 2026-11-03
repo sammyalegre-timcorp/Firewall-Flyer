@@ -1,4 +1,4 @@
-import { AppConfig, Character, MonsterConfig, CoinConfig, SkylineTheme, GameTheme, PrizeTier } from '../types/game';
+import { AppConfig, Character, MonsterConfig, CoinConfig, SkylineTheme, GameTheme, PrizeTier, RegistrationFieldsSettings } from '../types/game';
 
 // Generated asset paths
 export const DEFAULT_BRAND_LOGO = '/assets/aistudio/TIM_LOGO_low_quality_d0071df0.png';
@@ -395,33 +395,44 @@ export const LAST_USED_LOGO_KEY = 'tim_last_active_logo_v1';
 export const DEFAULT_PRIZE_TIERS: PrizeTier[] = [
   {
     id: 'tier_bronze',
-    minScore: 10,
+    minScore: 1,
+    maxScore: 24,
     prizeName: 'TIM Swag Sticker Pack & Tech Badge',
-    description: 'Score 10+ coins to claim official TIM Summit vinyl stickers & tech badge at the registration booth.',
+    description: 'Score 1–24 coins to claim official TIM Summit vinyl stickers & tech badge at the registration booth.',
     badgeColor: '#cd7f32',
   },
   {
     id: 'tier_silver',
     minScore: 25,
+    maxScore: 49,
     prizeName: 'TIM Multi-Port Fast Charge Cable',
-    description: 'Score 25+ coins to win a premium nylon-braided TIM 4-in-1 fast charge cable kit.',
+    description: 'Score 25–49 coins to win a premium nylon-braided TIM 4-in-1 fast charge cable kit.',
     badgeColor: '#94a3b8',
   },
   {
     id: 'tier_gold',
     minScore: 50,
+    maxScore: 99,
     prizeName: 'TIM Smart Power Bank (10,000mAh)',
-    description: 'Score 50+ coins to win an ultra-slim fast charge LED power bank & thermal travel tumbler.',
+    description: 'Score 50–99 coins to win an ultra-slim fast charge LED power bank & thermal travel tumbler.',
     badgeColor: '#f59e0b',
   },
   {
     id: 'tier_champion',
-    minScore: 80,
+    minScore: 100,
+    maxScore: null,
     prizeName: 'Grand Champion ANC Wireless Headset',
-    description: 'Score 80+ coins to claim the flagship TIM Active Noise Cancelling Wireless Headset & tournament trophy!',
+    description: 'Score 100+ coins to claim the flagship TIM Active Noise Cancelling Wireless Headset & tournament trophy!',
     badgeColor: '#00f0ff',
   },
 ];
+
+export const DEFAULT_REGISTRATION_FIELDS: RegistrationFieldsSettings = {
+  company: { show: true, required: true },
+  email: { show: true, required: true },
+  contactNumber: { show: true, required: true },
+  position: { show: true, required: true },
+};
 
 export const DEFAULT_APP_CONFIG: AppConfig = {
   theme: 'cyber_arcade',
@@ -455,7 +466,10 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     speedIncrementPerLevel: 0.35,
     monsterSpawnInterval: 320,
     soundEnabled: true,
-    bgmEnabled: false,
+    bgmEnabled: true,
+    masterVolume: 0.7,
+    bgmVolume: 0.5,
+    sfxVolume: 0.8,
     crtEffect: true,
     showHitboxes: false,
     gameDurationSeconds: 60,
@@ -472,6 +486,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     popupFooterText: 'Presented by TIM',
     enablePrizes: true,
     prizeTiers: DEFAULT_PRIZE_TIERS,
+    enableQrController: false,
+    registrationFields: DEFAULT_REGISTRATION_FIELDS,
   },
 };
 
@@ -570,6 +586,15 @@ export function loadAppConfig(): AppConfig {
         popupFooterText: parsed.settings?.popupFooterText || 'Presented by TIM',
         enablePrizes: parsed.settings?.enablePrizes !== undefined ? parsed.settings.enablePrizes : true,
         prizeTiers: loadedPrizeTiers,
+        bgmEnabled: parsed.settings?.bgmEnabled !== undefined ? parsed.settings.bgmEnabled : true,
+        masterVolume: parsed.settings?.masterVolume ?? 0.7,
+        bgmVolume: parsed.settings?.bgmVolume ?? 0.5,
+        sfxVolume: parsed.settings?.sfxVolume ?? 0.8,
+        enableQrController: parsed.settings?.enableQrController !== undefined ? parsed.settings.enableQrController : false,
+        registrationFields: {
+          ...DEFAULT_REGISTRATION_FIELDS,
+          ...(parsed.settings?.registrationFields || {}),
+        },
       },
       customSkyline: { ...DEFAULT_APP_CONFIG.customSkyline, ...(parsed.customSkyline || {}) },
       characters: parsed.characters && parsed.characters.length === 6 ? parsed.characters : fallbackChars,

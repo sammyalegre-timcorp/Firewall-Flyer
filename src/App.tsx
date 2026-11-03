@@ -8,23 +8,27 @@ import { AppConfig } from './types/game';
 import { loadAppConfig, saveAppConfig } from './utils/defaultConfig';
 import { GameCanvas } from './components/GameCanvas';
 import { AdminPanel } from './components/AdminPanel';
+import { MobileController } from './components/MobileController';
 import { usePWA } from './hooks/usePWA';
 import { Download, WifiOff, X } from 'lucide-react';
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig>(loadAppConfig);
   const [isAdminRoute, setIsAdminRoute] = useState(false);
+  const [isControllerRoute, setIsControllerRoute] = useState(false);
+  const [controllerEventId, setControllerEventId] = useState<string>('');
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
   const { isOnline, isInstallable, isInstalled, isIOS, install } = usePWA();
 
-  // Comprehensive route detection for /admin across Vercel direct links, subpaths, hash, and query params
+  // Route detection for /admin and /controller (?mode=controller)
   useEffect(() => {
     const checkRoute = () => {
       const rawPath = window.location.pathname.toLowerCase();
       const cleanPath = rawPath.replace(/\/+$/, '');
       const hash = window.location.hash.toLowerCase();
       const search = window.location.search.toLowerCase();
+      const params = new URLSearchParams(window.location.search);
 
       const isAdmin =
         cleanPath === '/admin' ||
@@ -35,7 +39,17 @@ export default function App() {
         search.includes('admin=1') ||
         search === '?admin';
 
+      const isController =
+        search.includes('mode=controller') ||
+        search.includes('controller=true') ||
+        cleanPath === '/controller' ||
+        cleanPath.endsWith('/controller') ||
+        hash === '#/controller' ||
+        hash === '#controller';
+
       setIsAdminRoute(isAdmin);
+      setIsControllerRoute(isController);
+      setControllerEventId(params.get('event') || config.settings.activeEventId || 'tim_summit_2026');
     };
 
     checkRoute();
@@ -45,7 +59,7 @@ export default function App() {
       window.removeEventListener('popstate', checkRoute);
       window.removeEventListener('hashchange', checkRoute);
     };
-  }, []);
+  }, [config.settings.activeEventId]);
 
   const handleCloseAdmin = () => {
     try {
@@ -60,6 +74,11 @@ export default function App() {
     setConfig(newConfig);
     saveAppConfig(newConfig);
   };
+
+  // If user opened the mobile controller link from QR scan
+  if (isControllerRoute) {
+    return <MobileController config={config} eventId={controllerEventId} />;
+  }
 
   // If user navigated directly to /admin, render the admin dashboard
   if (isAdminRoute) {

@@ -9,9 +9,10 @@ import {
   onSnapshot,
   getDocFromServer,
   deleteDoc,
+  increment,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { AttendeeRegistration, EventSession, ScoreEntry } from '../types/game';
+import { AttendeeRegistration, EventSession, ScoreEntry, GameSessionData } from '../types/game';
 
 // Initialize Firebase App & Firestore with specific database ID
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -92,7 +93,8 @@ export async function saveEventToFirestore(event: EventSession): Promise<void> {
       description: event.description || '',
       createdAt: event.createdAt,
       isActive: event.isActive,
-    });
+      highScore: event.highScore || 0,
+    }, { merge: true });
   } catch (err) {
     console.warn(`[Firestore] Event save fallback:`, err);
   }
@@ -190,4 +192,51 @@ export async function deleteAttendeeFromFirestore(eventId: string, attendeeId: s
   } catch (err) {
     console.warn(`[Firestore] Delete error:`, err);
   }
+}
+
+// -------------------------------------------------------------
+// REAL-TIME MOBILE CONTROLLER & GAME SESSION SYNC
+// -------------------------------------------------------------
+export async function updateGameSession(sessionId: string, data: Partial<GameSessionData>): Promise<void> {
+  try {
+    await setDoc(doc(db, 'game_sessions', sessionId), {
+      ...data,
+      sessionId,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  } catch (err) {
+    console.warn(`[Firestore] GameSession update fallback:`, err);
+  }
+}
+
+export async function sendControllerFlap(sessionId: string): Promise<void> {
+  try {
+    await setDoc(doc(db, 'game_sessions', sessionId), {
+      flapTrigger: increment(1),
+      lastFlapAt: Date.now(),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  } catch (err) {
+    console.warn(`[Firestore] sendControllerFlap fallback:`, err);
+  }
+}
+
+export function subscribeToGameSession(
+  sessionId: string,
+  onUpdate: (session: GameSessionData | null) => void
+): () => void {
+  const sessionDocRef = doc(db, 'game_sessions', sessionId);
+  return onSnapshot(
+    sessionDocRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        onUpdate(snapshot.data() as GameSessionData);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      console.warn(`[Firestore] subscribeToGameSession error:`, error);
+    }
+  );
 }

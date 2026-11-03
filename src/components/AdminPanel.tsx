@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppConfig, Character, CoinStyleId, MonsterTypeId, SkylineTheme, GameTheme, PrizeTier } from '../types/game';
+import { AppConfig, Character, CoinStyleId, MonsterTypeId, SkylineTheme, GameTheme, PrizeTier, RegistrationFieldsSettings } from '../types/game';
 import { 
   SKYLINE_THEMES, 
   MONSTER_CONFIGS, 
@@ -9,6 +9,7 @@ import {
   WIZARD_CHARACTERS,
   DEFAULT_BRAND_LOGO,
   DEFAULT_PRIZE_TIERS,
+  DEFAULT_REGISTRATION_FIELDS,
   LAST_USED_LOGO_KEY,
 } from '../utils/defaultConfig';
 import { 
@@ -40,6 +41,8 @@ import {
   Trophy,
   Award,
   Gift,
+  QrCode,
+  Smartphone,
 } from 'lucide-react';
 import {
   getEvents,
@@ -68,7 +71,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
   const [characterGenderFilter, setCharacterGenderFilter] = useState<'all' | 'boy' | 'girl'>('all');
 
   // Prize Tiers state
-  const [newPrizeScore, setNewPrizeScore] = useState<number>(15);
+  const [newPrizeMinScore, setNewPrizeMinScore] = useState<number>(1);
+  const [newPrizeMaxScore, setNewPrizeMaxScore] = useState<string>('50');
   const [newPrizeName, setNewPrizeName] = useState<string>('');
   const [newPrizeDesc, setNewPrizeDesc] = useState<string>('');
   const [newPrizeBadgeColor, setNewPrizeBadgeColor] = useState<string>('#38bdf8');
@@ -224,12 +228,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
     }));
   };
 
-  // Prize Tiers CRUD helpers
+  // Prize Tiers CRUD helpers with Min/Max range support
   const handleAddPrizeTier = () => {
     if (!newPrizeName.trim()) return;
+    const maxVal = newPrizeMaxScore.trim() ? parseInt(newPrizeMaxScore, 10) : null;
     const newTier: PrizeTier = {
       id: `tier_${Date.now()}`,
-      minScore: Math.max(1, newPrizeScore),
+      minScore: Math.max(1, newPrizeMinScore),
+      maxScore: maxVal !== null && !isNaN(maxVal) ? Math.max(newPrizeMinScore, maxVal) : null,
       prizeName: newPrizeName.trim(),
       description: newPrizeDesc.trim() || undefined,
       badgeColor: newPrizeBadgeColor || '#f59e0b',
@@ -246,7 +252,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
     }));
     setNewPrizeName('');
     setNewPrizeDesc('');
-    setNewPrizeScore(updatedTiers[updatedTiers.length - 1].minScore + 15);
+    const nextMin = newTier.maxScore ? newTier.maxScore + 1 : newTier.minScore + 25;
+    setNewPrizeMinScore(nextMin);
+    setNewPrizeMaxScore((nextMin + 49).toString());
   };
 
   const handleUpdatePrizeTier = (id: string, updates: Partial<PrizeTier>) => {
@@ -1665,8 +1673,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                             <span className="text-xs font-mono font-bold text-slate-400">
                               TIER #{idx + 1}
                             </span>
-                            <span className="text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700">
-                              Requires {tier.minScore} {formData.theme === 'magic_academy' ? 'snitches' : 'coins'}
+                            <span className="text-xs font-bold text-white bg-slate-800 px-2.5 py-0.5 rounded-md border border-slate-700 font-mono">
+                              {tier.minScore} {tier.maxScore ? `– ${tier.maxScore}` : '+'} {formData.theme === 'magic_academy' ? 'snitches' : 'pts'}
                             </span>
                           </div>
 
@@ -1699,25 +1707,43 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                          {/* Score Needed */}
-                          <div className="sm:col-span-3">
+                          {/* Score Range: Min and Max */}
+                          <div className="sm:col-span-2">
                             <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                              Score Needed
+                              Min Points
                             </label>
                             <input
                               type="number"
-                              min="1"
+                              min="0"
                               max="9999"
                               value={tier.minScore}
                               onChange={(e) =>
-                                handleUpdatePrizeTier(tier.id, { minScore: Math.max(1, parseInt(e.target.value, 10) || 1) })
+                                handleUpdatePrizeTier(tier.id, { minScore: Math.max(0, parseInt(e.target.value, 10) || 0) })
                               }
                               className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 font-mono font-bold text-sm focus:outline-none focus:border-amber-400"
                             />
                           </div>
 
+                          <div className="sm:col-span-2">
+                            <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                              Max Points
+                            </label>
+                            <input
+                              type="text"
+                              value={tier.maxScore !== null && tier.maxScore !== undefined ? tier.maxScore : ''}
+                              placeholder="No limit (+)"
+                              onChange={(e) => {
+                                const val = e.target.value.trim();
+                                handleUpdatePrizeTier(tier.id, {
+                                  maxScore: val ? Math.max(tier.minScore, parseInt(val, 10) || tier.minScore) : null,
+                                });
+                              }}
+                              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 font-mono font-bold text-sm focus:outline-none focus:border-amber-400"
+                            />
+                          </div>
+
                           {/* Prize Name */}
-                          <div className="sm:col-span-5">
+                          <div className="sm:col-span-4">
                             <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                               Prize Title
                             </label>
@@ -1758,25 +1784,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
               <div className="bg-slate-850/80 border border-slate-700/80 rounded-2xl p-5 space-y-4">
                 <div className="flex items-center gap-2">
                   <Plus className="w-4 h-4 text-emerald-400" />
-                  <h3 className="text-sm font-bold text-white">Add New Prize Milestone</h3>
+                  <h3 className="text-sm font-bold text-white">Add New Prize Milestone Range</h3>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                  <div className="sm:col-span-3">
+                  <div className="sm:col-span-2">
                     <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                      Score Needed ({formData.theme === 'magic_academy' ? 'Snitches' : 'Coins'})
+                      Min Points
                     </label>
                     <input
                       type="number"
-                      min="1"
+                      min="0"
                       max="9999"
-                      value={newPrizeScore}
-                      onChange={(e) => setNewPrizeScore(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      value={newPrizeMinScore}
+                      onChange={(e) => setNewPrizeMinScore(Math.max(0, parseInt(e.target.value, 10) || 0))}
                       className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 font-mono font-bold text-sm focus:outline-none focus:border-amber-400"
                     />
                   </div>
 
-                  <div className="sm:col-span-5">
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                      Max Points
+                    </label>
+                    <input
+                      type="text"
+                      value={newPrizeMaxScore}
+                      placeholder="e.g. 100 (or blank)"
+                      onChange={(e) => setNewPrizeMaxScore(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 font-mono font-bold text-sm focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-4">
                     <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                       Prize Name / Reward Title
                     </label>
@@ -1784,7 +1823,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                       type="text"
                       value={newPrizeName}
                       onChange={(e) => setNewPrizeName(e.target.value)}
-                      placeholder="e.g. TIM Premium Wireless Earbuds"
+                      placeholder="e.g. TIM Fast Charge Kit"
                       className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-cyan-400"
                     />
                   </div>
@@ -1832,7 +1871,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                     }`}
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Add Prize Tier ({newPrizeScore} coins)</span>
+                    <span>
+                      Add Prize Tier ({newPrizeMinScore}{newPrizeMaxScore.trim() ? `–${newPrizeMaxScore}` : '+'} pts)
+                    </span>
                   </button>
                 </div>
               </div>
@@ -2059,6 +2100,355 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* 3. QR Code Registration & Mobile Device Flight Controller Option */}
+                <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 lg:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <QrCode className="w-5 h-5 text-cyan-400" />
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <span>QR Code Registration & Mobile Device Controller</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                          formData.settings.enableQrController
+                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                            : 'bg-slate-700/50 text-slate-400 border border-slate-600'
+                        }`}>
+                          {formData.settings.enableQrController ? 'QR Mode Enabled' : 'Screen Registration Mode'}
+                        </span>
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      If enabled, a QR code is displayed on the main arcade screen. Attendees scan with their phone to register, which automatically turns their mobile device into the flight controller button (the registration modal won&apos;t show up on the screen). If disabled, the standard registration modal will show up on the screen.
+                    </p>
+                  </div>
+
+                  <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-700/80 cursor-pointer hover:bg-slate-900 transition-colors shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={formData.settings.enableQrController ?? false}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          settings: {
+                            ...formData.settings,
+                            enableQrController: e.target.checked,
+                          },
+                        })
+                      }
+                      className="w-5 h-5 rounded text-cyan-500 focus:ring-cyan-400 bg-slate-800 border-slate-700 cursor-pointer accent-cyan-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-white block">
+                        Enable QR Mobile Controller
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        {formData.settings.enableQrController ? 'Hides on-screen registration' : 'Shows on-screen registration'}
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Customizable Registration Fields (Show / Required toggles) */}
+              <div className="p-5 rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Sliders className="w-5 h-5 text-purple-400" />
+                    <div>
+                      <h3 className="text-sm font-bold text-white">
+                        Customizable Registration Fields
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        Configure visibility (Show) and requirement (Required) independently for attendee check-in fields.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/30 self-start sm:self-auto">
+                    Full Name: Always Mandatory
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Full Name (Fixed) */}
+                  <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-white block">Full Name</span>
+                      <span className="text-[10px] text-slate-400">Core identification &amp; score record</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        Show: ON
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                        Required: YES
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Company */}
+                  {(() => {
+                    const fields = formData.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS;
+                    const c = fields.company;
+                    return (
+                      <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Company</span>
+                          <span className="text-[10px] text-slate-400">Organization / Agency affiliation</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={c.show}
+                              onChange={(e) => {
+                                const show = e.target.checked;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    registrationFields: {
+                                      ...(prev.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS),
+                                      company: {
+                                        show,
+                                        required: show ? c.required : false,
+                                      },
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-400 w-3.5 h-3.5 accent-cyan-500"
+                            />
+                            <span className="text-[11px] font-medium">Show</span>
+                          </label>
+
+                          <label className={`flex items-center gap-1.5 text-xs ${c.show ? 'text-slate-300 cursor-pointer' : 'text-slate-600 cursor-not-allowed'}`}>
+                            <input
+                              type="checkbox"
+                              disabled={!c.show}
+                              checked={c.required}
+                              onChange={(e) => {
+                                const required = e.target.checked;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    registrationFields: {
+                                      ...(prev.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS),
+                                      company: {
+                                        show: required ? true : c.show,
+                                        required,
+                                      },
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="rounded border-slate-700 text-purple-500 focus:ring-purple-400 w-3.5 h-3.5 accent-purple-500 disabled:opacity-40"
+                            />
+                            <span className="text-[11px] font-medium">Required</span>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Email */}
+                  {(() => {
+                    const fields = formData.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS;
+                    const em = fields.email;
+                    return (
+                      <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Email Address</span>
+                          <span className="text-[10px] text-slate-400">Used for unique attendee check-in</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={em.show}
+                              onChange={(e) => {
+                                const show = e.target.checked;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    registrationFields: {
+                                      ...(prev.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS),
+                                      email: {
+                                        show,
+                                        required: show ? em.required : false,
+                                      },
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-400 w-3.5 h-3.5 accent-cyan-500"
+                            />
+                            <span className="text-[11px] font-medium">Show</span>
+                          </label>
+
+                          <label className={`flex items-center gap-1.5 text-xs ${em.show ? 'text-slate-300 cursor-pointer' : 'text-slate-600 cursor-not-allowed'}`}>
+                            <input
+                              type="checkbox"
+                              disabled={!em.show}
+                              checked={em.required}
+                              onChange={(e) => {
+                                const required = e.target.checked;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    registrationFields: {
+                                      ...(prev.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS),
+                                      email: {
+                                        show: required ? true : em.show,
+                                        required,
+                                      },
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="rounded border-slate-700 text-purple-500 focus:ring-purple-400 w-3.5 h-3.5 accent-purple-500 disabled:opacity-40"
+                            />
+                            <span className="text-[11px] font-medium">Required</span>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Contact Number */}
+                  {(() => {
+                    const fields = formData.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS;
+                    const ph = fields.contactNumber;
+                    return (
+                      <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Contact Number</span>
+                          <span className="text-[10px] text-slate-400">Mobile or phone number</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={ph.show}
+                              onChange={(e) => {
+                                const show = e.target.checked;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    registrationFields: {
+                                      ...(prev.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS),
+                                      contactNumber: {
+                                        show,
+                                        required: show ? ph.required : false,
+                                      },
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-400 w-3.5 h-3.5 accent-cyan-500"
+                            />
+                            <span className="text-[11px] font-medium">Show</span>
+                          </label>
+
+                          <label className={`flex items-center gap-1.5 text-xs ${ph.show ? 'text-slate-300 cursor-pointer' : 'text-slate-600 cursor-not-allowed'}`}>
+                            <input
+                              type="checkbox"
+                              disabled={!ph.show}
+                              checked={ph.required}
+                              onChange={(e) => {
+                                const required = e.target.checked;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    registrationFields: {
+                                      ...(prev.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS),
+                                      contactNumber: {
+                                        show: required ? true : ph.show,
+                                        required,
+                                      },
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="rounded border-slate-700 text-purple-500 focus:ring-purple-400 w-3.5 h-3.5 accent-purple-500 disabled:opacity-40"
+                            />
+                            <span className="text-[11px] font-medium">Required</span>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Position */}
+                  {(() => {
+                    const fields = formData.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS;
+                    const pos = fields.position;
+                    return (
+                      <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Position</span>
+                          <span className="text-[10px] text-slate-400">Job title / Designation</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={pos.show}
+                              onChange={(e) => {
+                                const show = e.target.checked;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    registrationFields: {
+                                      ...(prev.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS),
+                                      position: {
+                                        show,
+                                        required: show ? pos.required : false,
+                                      },
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-400 w-3.5 h-3.5 accent-cyan-500"
+                            />
+                            <span className="text-[11px] font-medium">Show</span>
+                          </label>
+
+                          <label className={`flex items-center gap-1.5 text-xs ${pos.show ? 'text-slate-300 cursor-pointer' : 'text-slate-600 cursor-not-allowed'}`}>
+                            <input
+                              type="checkbox"
+                              disabled={!pos.show}
+                              checked={pos.required}
+                              onChange={(e) => {
+                                const required = e.target.checked;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    registrationFields: {
+                                      ...(prev.settings.registrationFields || DEFAULT_REGISTRATION_FIELDS),
+                                      position: {
+                                        show: required ? true : pos.show,
+                                        required,
+                                      },
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="rounded border-slate-700 text-purple-500 focus:ring-purple-400 w-3.5 h-3.5 accent-purple-500 disabled:opacity-40"
+                            />
+                            <span className="text-[11px] font-medium">Required</span>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
