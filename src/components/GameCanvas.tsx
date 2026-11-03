@@ -50,7 +50,7 @@ import {
   getEventLeaderboard,
   getEventHighScore,
 } from '../utils/eventStorage';
-import { subscribeToGameSession, updateGameSession, releaseDeviceSlot } from '../lib/firebase';
+import { subscribeToGameSession, updateGameSession } from '../lib/firebase';
 
 interface GameCanvasProps {
   config: AppConfig;
@@ -164,11 +164,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   // Duplicate attendee detection
   const [duplicateAttendeeAlert, setDuplicateAttendeeAlert] = useState<AttendeeRegistration | null>(null);
 
-  // Mobile Controller Connection & Auto-Return State
-  const [isDeviceConnected, setIsDeviceConnected] = useState<boolean>(false);
-  const [connectedDeviceName, setConnectedDeviceName] = useState<string | null>(null);
-  const [gameOverCountdown, setGameOverCountdown] = useState<number | null>(null);
-
   // Refresh event high score
   useEffect(() => {
     try {
@@ -190,12 +185,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   }, [showRegistration]);
 
   useEffect(() => {
-    if (!config.settings.enableQrController) {
-      if ((config.settings.requireRegistration ?? true) && !getCurrentSessionAttendee()) {
-        setShowRegistration(true);
-      } else if (config.settings.requireRegistration === false) {
-        setShowRegistration(false);
-      }
+    if (config.settings.enableQrController) {
+      setShowRegistration(false);
+    } else if ((config.settings.requireRegistration ?? true) && !getCurrentSessionAttendee()) {
+      setShowRegistration(true);
+    } else if (config.settings.requireRegistration === false) {
+      setShowRegistration(false);
     }
   }, [config.settings.requireRegistration, config.settings.enableQrController]);
 
@@ -442,9 +437,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   // Input Handling: Hold to fly, Release to fall
   // -----------------------------------------------------------------
   const startThrust = useCallback(() => {
-    if (isQrMode && !currentAttendee) {
-      return;
-    }
     if (stateRef.current.gameState === 'READY') {
       stateRef.current.gameState = 'PLAYING';
       stateRef.current.isThrusting = true;
@@ -498,78 +490,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     }, 160);
   }, [config]);
 
-  const handleAutoReturnToRegistration = useCallback(async () => {
-    const sessionId = config.settings.activeEventId;
-    if (sessionId) {
-      await releaseDeviceSlot(sessionId);
-      updateGameSession(sessionId, {
-        status: 'ready',
-        gameOver: false,
-        currentScore: 0,
-        prizeWon: null,
-        isThrusting: false,
-        connectedDeviceId: null,
-        connectedDeviceName: null,
-      });
-    }
-    clearCurrentSessionAttendee();
-    setCurrentAttendee(null);
-    setRegName('');
-    setRegCompany('');
-    setRegEmail('');
-    setRegContactNumber('');
-    setRegPosition('');
-    setRegError(null);
-    setDuplicateAttendeeAlert(null);
-    setGameOverCountdown(null);
-    resetToReady();
-    if (!isQrMode) {
-      setShowRegistration(true);
-    }
-  }, [config.settings.activeEventId, isQrMode]);
-
-  // -------------------------------------------------------------
-  // AUTO-RETURN TO REGISTRATION OR QR SCREEN 5 SECONDS AFTER GAME OVER
-  // -------------------------------------------------------------
-  useEffect(() => {
-    if (gameState === 'GAME_OVER') {
-      setGameOverCountdown(5);
-      const interval = setInterval(() => {
-        setGameOverCountdown((prev) => {
-          if (prev === null || prev <= 1) {
-            clearInterval(interval);
-            handleAutoReturnToRegistration();
-            return null;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    } else {
-      setGameOverCountdown(null);
-    }
-  }, [gameState, handleAutoReturnToRegistration]);
-
   // Real-time Mobile Controller sync from Firestore
   useEffect(() => {
     const sessionId = config.settings.activeEventId;
     if (!sessionId) return;
 
     const unsub = subscribeToGameSession(sessionId, (session) => {
-      if (!session) {
-        setIsDeviceConnected(false);
-        setConnectedDeviceName(null);
-        return;
-      }
-
-      // Track connected controller device status
-      if (session.connectedDeviceId) {
-        setIsDeviceConnected(true);
-        setConnectedDeviceName(session.connectedDeviceName || session.activeAttendee?.name || 'Pilot Device');
-      } else {
-        setIsDeviceConnected(false);
-        setConnectedDeviceName(null);
-      }
+      if (!session) return;
 
       // Pilot registered from mobile phone
       if (session.activeAttendee && (!currentAttendee || currentAttendee.id !== session.activeAttendee.id)) {
@@ -578,29 +505,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         setShowRegistration(false);
       }
 
-      // Long-press sustained thrust handling from mobile controller
-      if (session.isThrusting !== undefined) {
-        if (session.isThrusting) {
-          if (stateRef.current.gameState === 'READY') {
-            stateRef.current.gameState = 'PLAYING';
-            stateRef.current.playerVy = -3.8;
-            stateRef.current.isThrusting = true;
-            setGameState('PLAYING');
-            sound.startJetpack(config.settings.soundEnabled);
-            sound.setBgm(config.settings.bgmEnabled);
-          } else if (stateRef.current.gameState === 'PLAYING') {
-            stateRef.current.isThrusting = true;
-            sound.startJetpack(config.settings.soundEnabled);
-          }
-        } else {
-          if (stateRef.current.gameState === 'PLAYING') {
-            stateRef.current.isThrusting = false;
-            sound.stopJetpack();
-          }
-        }
-      }
-
-      // Controller tap pulse fallback
+      // Controller tap pulse
       if (session.flapTrigger && session.flapTrigger > lastFlapTriggerRef.current) {
         lastFlapTriggerRef.current = session.flapTrigger;
         triggerControllerFlap();
@@ -608,7 +513,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
     });
 
     return () => unsub();
-  }, [config.settings.activeEventId, config.settings.soundEnabled, config.settings.bgmEnabled, currentAttendee, triggerControllerFlap]);
+  }, [config.settings.activeEventId, currentAttendee, triggerControllerFlap]);
 
   // Broadcast game status and score to mobile phone controller
   useEffect(() => {
@@ -830,32 +735,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
         spread: 70,
         origin: { y: 0.6 },
         colors: isMagicTheme ? ['#ffd700', '#f59e0b', '#c084fc'] : ['#00f0ff', '#ff007f', '#ffd700'],
-      });
-    }
-
-    // Determine prize won to broadcast to mobile controller
-    const prizeTiers = (config.settings.prizeTiers || []).slice();
-    const wonPrize =
-      prizeTiers.find((tier) => {
-        const minOk = finalCoins >= tier.minScore;
-        const maxOk = tier.maxScore != null ? finalCoins <= tier.maxScore : true;
-        return minOk && maxOk;
-      }) ||
-      prizeTiers
-        .slice()
-        .sort((a, b) => b.minScore - a.minScore)
-        .find((tier) => finalCoins >= tier.minScore);
-
-    if (config.settings.activeEventId) {
-      releaseDeviceSlot(config.settings.activeEventId);
-      updateGameSession(config.settings.activeEventId, {
-        status: 'game_over',
-        gameOver: true,
-        currentScore: finalCoins,
-        prizeWon: wonPrize ? wonPrize.prizeName : null,
-        isThrusting: false,
-        connectedDeviceId: null,
-        connectedDeviceName: null,
       });
     }
   };
@@ -3140,23 +3019,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               {Math.max(eventHighScoreInfo.score, highScore)}
             </span>
           </div>
-
-          {/* Connected Device Status Badge (Only 1 device allowed) */}
-          {isDeviceConnected ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/90 border border-emerald-500/60 shadow-sm text-xs text-emerald-300">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <Smartphone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="text-[10px] font-bold uppercase tracking-wider hidden lg:inline">Connected:</span>
-              <span className="text-[11px] font-bold text-white truncate max-w-[80px] sm:max-w-[130px]">
-                {connectedDeviceName || currentAttendee?.name || 'Device'}
-              </span>
-            </div>
-          ) : (
-            <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-xl bg-slate-900/60 border border-slate-800 text-[10px] text-slate-400">
-              <Smartphone className="w-3 h-3 text-slate-500" />
-              <span>No Controller</span>
-            </div>
-          )}
         </div>
 
         {/* Center Section: Countdown Timer */}
@@ -3451,26 +3313,26 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               />
             </div>
 
-            {isDeviceConnected ? (
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-300 mb-4 bg-emerald-950/80 border border-emerald-500/50 px-3 py-1.5 rounded-xl shadow-md">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Connected: {connectedDeviceName || 'Ready'}!</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-[11px] font-mono text-cyan-300 mb-4 animate-pulse">
-                <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                <span>Awaiting pilot to scan &amp; connect (1 device max)...</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 text-[11px] font-mono text-cyan-300 mb-4 animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-cyan-400" />
+              <span>Awaiting pilot to scan &amp; connect...</span>
+            </div>
 
-            {/* Optional manual on-screen register */}
-            <div className="w-full pt-3 border-t border-slate-800">
+            {/* Optional manual on-screen register or admin bypass */}
+            <div className="grid grid-cols-2 gap-2 w-full pt-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setShowRegistration(true)}
-                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
               >
                 Screen Register
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAdminConfirmModal(true)}
+                className="py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Play as Admin
               </button>
             </div>
 
@@ -4483,33 +4345,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                 </div>
               )}
 
-              {/* 5-SECOND AUTO-RETURN COUNTDOWN PILL & PROGRESS */}
-              {gameOverCountdown !== null && (
-                <div className="w-full mb-3 p-2.5 rounded-2xl bg-slate-950/90 border border-slate-700/80 flex flex-col gap-1.5 shadow-inner">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5 text-slate-300">
-                      <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-                      <span>Auto-returning to {isQrMode ? 'QR Controller' : 'Registration'}:</span>
-                    </div>
-                    <span className="font-mono font-black text-amber-300 bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 rounded-lg text-xs">
-                      {gameOverCountdown}s
-                    </span>
-                  </div>
-                  {/* Micro Progress Bar */}
-                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-cyan-400 to-amber-400 transition-all duration-1000 ease-linear rounded-full"
-                      style={{ width: `${(gameOverCountdown / 5) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
               {/* REGISTER (NEW ATTENDEE) ACTION - Always returns to Registration */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleAutoReturnToRegistration();
+                  clearCurrentSessionAttendee();
+                  setCurrentAttendee(null);
+                  setRegName('');
+                  setRegCompany('');
+                  setRegEmail('');
+                  setRegContactNumber('');
+                  setRegPosition('');
+                  setRegError(null);
+                  setDuplicateAttendeeAlert(null);
+                  resetToReady();
+                  if (!isQrMode) {
+                    setShowRegistration(true);
+                  }
                 }}
                 className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-cyan-400 via-sky-400 to-purple-500 hover:from-cyan-300 hover:to-purple-400 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg hover:shadow-cyan-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5"
               >

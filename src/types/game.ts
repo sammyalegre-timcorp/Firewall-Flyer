@@ -113,10 +113,6 @@ export interface GameSessionData {
   eventId: string;
   status: 'waiting' | 'ready' | 'playing' | 'game_over';
   activeAttendee?: AttendeeRegistration | null;
-  connectedDeviceId?: string | null;
-  connectedDeviceName?: string | null;
-  connectedAt?: number;
-  isThrusting?: boolean;
   flapTrigger: number;
   lastFlapAt?: number;
   currentScore?: number;
