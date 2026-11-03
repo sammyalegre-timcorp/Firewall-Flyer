@@ -462,6 +462,35 @@ export const MobileController: React.FC<MobileControllerProps> = ({ config, even
                 <span>Connect &amp; Start Flight</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const adminAttendee: AttendeeRegistration = {
+                    id: `admin_mob_${Date.now()}`,
+                    name: 'Admin Pilot (Mobile)',
+                    company: 'Event Administration',
+                    email: 'admin@event.local',
+                    contactNumber: '—',
+                    position: 'Administrator',
+                    eventId: config.settings.activeEventId,
+                    bestScore: 0,
+                    coins: 0,
+                    totalRuns: 0,
+                    registeredAt: new Date().toISOString(),
+                  };
+                  const claimResult = await claimDeviceSlot(sessionId, deviceId, adminAttendee.name, adminAttendee);
+                  if (!claimResult.success) {
+                    setErrorMsg(claimResult.message || 'Cockpit is occupied.');
+                    return;
+                  }
+                  setCurrentSessionAttendee(adminAttendee);
+                  setAttendee(adminAttendee);
+                }}
+                className="w-full mt-2.5 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>Play as Admin</span>
+              </button>
             </form>
           </div>
         </main>

@@ -190,12 +190,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   }, [showRegistration]);
 
   useEffect(() => {
-    if (config.settings.enableQrController) {
-      setShowRegistration(false);
-    } else if ((config.settings.requireRegistration ?? true) && !getCurrentSessionAttendee()) {
-      setShowRegistration(true);
-    } else if (config.settings.requireRegistration === false) {
-      setShowRegistration(false);
+    if (!config.settings.enableQrController) {
+      if ((config.settings.requireRegistration ?? true) && !getCurrentSessionAttendee()) {
+        setShowRegistration(true);
+      } else if (config.settings.requireRegistration === false) {
+        setShowRegistration(false);
+      }
     }
   }, [config.settings.requireRegistration, config.settings.enableQrController]);
 
@@ -3448,21 +3448,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
               </div>
             )}
 
-            {/* Optional manual on-screen register or admin bypass */}
-            <div className="grid grid-cols-2 gap-2 w-full pt-3 border-t border-slate-800">
+            {/* Optional manual on-screen register */}
+            <div className="w-full pt-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setShowRegistration(true)}
-                className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
               >
                 Screen Register
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowAdminConfirmModal(true)}
-                className="py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-colors cursor-pointer"
-              >
-                Play as Admin
               </button>
             </div>
 
