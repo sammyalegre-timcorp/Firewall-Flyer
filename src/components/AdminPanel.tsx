@@ -54,6 +54,7 @@ import {
   exportEventToJSON,
   deleteRegistration,
   mergeRemoteAttendees,
+  onDataSync,
 } from '../utils/eventStorage';
 import { subscribeToEventAttendees } from '../lib/firebase';
 import { EventSession, AttendeeRegistration } from '../types/game';
@@ -113,6 +114,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onSaveConfig, on
     return () => {
       unsubscribe();
     };
+  }, [selectedEventId]);
+
+  // Live real-time cross-device data sync listener
+  useEffect(() => {
+    const unsub = onDataSync(() => {
+      setEventsList(getEvents());
+      refreshAttendeeRecords(selectedEventId);
+      setIsFirebaseSynced(true);
+    });
+    return unsub;
   }, [selectedEventId]);
 
   const isMagic = formData.theme === 'magic_academy';

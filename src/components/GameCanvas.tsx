@@ -49,6 +49,7 @@ import {
   checkAttendeeExists,
   getEventLeaderboard,
   getEventHighScore,
+  onDataSync,
 } from '../utils/eventStorage';
 import { subscribeToGameSession, updateGameSession } from '../lib/firebase';
 
@@ -170,6 +171,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       const info = getEventHighScore(config.settings.activeEventId);
       setEventHighScoreInfo(info);
     } catch {}
+  }, [config.settings.activeEventId]);
+
+  // Real-time cross-device data sync listener for high scores & attendees
+  useEffect(() => {
+    const unsub = onDataSync(() => {
+      try {
+        const info = getEventHighScore(config.settings.activeEventId);
+        setEventHighScoreInfo(info);
+      } catch {}
+    });
+    return unsub;
   }, [config.settings.activeEventId]);
 
   useEffect(() => {

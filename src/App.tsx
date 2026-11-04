@@ -5,7 +5,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { AppConfig } from './types/game';
-import { loadAppConfig, saveAppConfig } from './utils/defaultConfig';
+import { loadAppConfig, saveAppConfig, syncAppConfigFromFirestore, subscribeToRemoteAppConfig } from './utils/defaultConfig';
+import { initGlobalCrossDeviceSync } from './utils/eventStorage';
+import { testConnection } from './lib/firebase';
 import { GameCanvas } from './components/GameCanvas';
 import { AdminPanel } from './components/AdminPanel';
 import { MobileController } from './components/MobileController';
@@ -20,6 +22,30 @@ export default function App() {
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
   const { isOnline, isInstallable, isInstalled, isIOS, install } = usePWA();
+
+  // Continuous bidirectional cross-device sync for events, attendees, scores, and settings
+  useEffect(() => {
+    // Test initial connection to Firestore
+    testConnection().catch(() => {});
+
+    // 1. Initial and live sync of events and attendee records across all devices
+    const cleanupEventsSync = initGlobalCrossDeviceSync();
+
+    // 2. Initial fetch and merge of app config from Firestore
+    syncAppConfigFromFirestore((syncedConfig) => {
+      setConfig(syncedConfig);
+    });
+
+    // 3. Real-time subscription to remote config changes from any device
+    const cleanupConfigSync = subscribeToRemoteAppConfig((syncedConfig) => {
+      setConfig(syncedConfig);
+    });
+
+    return () => {
+      cleanupEventsSync();
+      cleanupConfigSync();
+    };
+  }, []);
 
   // Route detection for /admin and /controller (?mode=controller)
   useEffect(() => {

@@ -14,13 +14,15 @@ service cloud.firestore {
 
     // Events collection
     match /events/{eventId} {
-      allow read: if isValidId(eventId);
+      allow get: if isValidId(eventId);
+      allow list: if true;
       allow write: if isValidId(eventId)
         && request.resource.data.name is string && request.resource.data.name.size() <= 200;
 
       // Event attendees subcollection
       match /attendees/{attendeeId} {
-        allow read: if isValidId(eventId) && isValidId(attendeeId);
+        allow get: if isValidId(eventId) && isValidId(attendeeId);
+        allow list: if isValidId(eventId);
         allow create, update: if isValidId(eventId) && isValidId(attendeeId)
           && request.resource.data.name is string && request.resource.data.name.size() <= 150
           && request.resource.data.email is string && request.resource.data.email.size() <= 150;
@@ -30,7 +32,8 @@ service cloud.firestore {
 
     // Scores collection
     match /scores/{scoreId} {
-      allow read: if isValidId(scoreId);
+      allow get: if isValidId(scoreId);
+      allow list: if true;
       allow create, update: if isValidId(scoreId)
         && request.resource.data.playerName is string && request.resource.data.playerName.size() <= 150
         && request.resource.data.score is number;
@@ -40,6 +43,11 @@ service cloud.firestore {
     // Game sessions collection for QR mobile controller sync
     match /game_sessions/{sessionId} {
       allow read, write: if isValidId(sessionId);
+    }
+
+    // App settings collection for cross-device synchronization
+    match /app_settings/{settingsId} {
+      allow read, write: if isValidId(settingsId);
     }
   }
 }

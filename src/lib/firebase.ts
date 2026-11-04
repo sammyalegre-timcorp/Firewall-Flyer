@@ -12,7 +12,7 @@ import {
   increment,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { AttendeeRegistration, EventSession, ScoreEntry, GameSessionData } from '../types/game';
+import { AttendeeRegistration, EventSession, ScoreEntry, GameSessionData, AppConfig } from '../types/game';
 
 // Initialize Firebase App & Firestore with specific database ID
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -100,6 +100,43 @@ export async function saveEventToFirestore(event: EventSession): Promise<void> {
   }
 }
 
+export async function fetchEventsFromFirestore(): Promise<EventSession[]> {
+  try {
+    const snap = await getDocs(collection(db, 'events'));
+    const events: EventSession[] = [];
+    snap.forEach((docSnap) => {
+      if (docSnap.id !== 'connection_probe') {
+        events.push(docSnap.data() as EventSession);
+      }
+    });
+    return events;
+  } catch (err) {
+    console.warn(`[Firestore] fetchEvents error:`, err);
+    return [];
+  }
+}
+
+export function subscribeToEvents(onData: (events: EventSession[]) => void): () => void {
+  const collRef = collection(db, 'events');
+  return onSnapshot(
+    collRef,
+    (snapshot) => {
+      const records: EventSession[] = [];
+      snapshot.forEach((d) => {
+        if (d.id !== 'connection_probe') {
+          records.push(d.data() as EventSession);
+        }
+      });
+      if (records.length > 0) {
+        onData(records);
+      }
+    },
+    (error) => {
+      console.warn(`[Firestore] onSnapshot error for events:`, error);
+    }
+  );
+}
+
 // -------------------------------------------------------------
 // ATTENDEE REGISTRATION & SCORES FIRESTORE SYNC
 // -------------------------------------------------------------
@@ -166,6 +203,20 @@ export async function saveScoreEntryToFirestore(score: ScoreEntry): Promise<void
   }
 }
 
+export async function fetchAttendeesForEvent(eventId: string): Promise<AttendeeRegistration[]> {
+  try {
+    const snap = await getDocs(collection(db, 'events', eventId, 'attendees'));
+    const records: AttendeeRegistration[] = [];
+    snap.forEach((d) => {
+      records.push(d.data() as AttendeeRegistration);
+    });
+    return records;
+  } catch (err) {
+    console.warn(`[Firestore] fetchAttendees error for event ${eventId}:`, err);
+    return [];
+  }
+}
+
 export function subscribeToEventAttendees(
   eventId: string,
   onData: (attendees: AttendeeRegistration[]) => void
@@ -192,6 +243,58 @@ export async function deleteAttendeeFromFirestore(eventId: string, attendeeId: s
   } catch (err) {
     console.warn(`[Firestore] Delete error:`, err);
   }
+}
+
+// -------------------------------------------------------------
+// CROSS-DEVICE APP SETTINGS & CONFIGURATION SYNC
+// -------------------------------------------------------------
+export async function saveAppSettingsToFirestore(config: AppConfig): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'app_settings', 'global_config'),
+      {
+        id: 'global_config',
+        updatedAt: new Date().toISOString(),
+        config: JSON.parse(JSON.stringify(config)),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn(`[Firestore] saveAppSettings fallback:`, err);
+  }
+}
+
+export async function fetchAppSettingsFromFirestore(): Promise<AppConfig | null> {
+  try {
+    const snap = await getDocFromServer(doc(db, 'app_settings', 'global_config'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data?.config) {
+        return data.config as AppConfig;
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn(`[Firestore] fetchAppSettings fallback:`, err);
+    return null;
+  }
+}
+
+export function subscribeToAppSettings(onData: (config: AppConfig) => void): () => void {
+  return onSnapshot(
+    doc(db, 'app_settings', 'global_config'),
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data?.config) {
+          onData(data.config as AppConfig);
+        }
+      }
+    },
+    (error) => {
+      console.warn(`[Firestore] subscribeToAppSettings error:`, error);
+    }
+  );
 }
 
 // -------------------------------------------------------------

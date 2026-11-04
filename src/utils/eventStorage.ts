@@ -5,12 +5,30 @@ import {
   saveEventToFirestore,
   deleteAttendeeFromFirestore,
   subscribeToEventAttendees,
+  fetchEventsFromFirestore,
+  fetchAttendeesForEvent,
+  subscribeToEvents,
 } from '../lib/firebase';
 
 const EVENTS_KEY = 'tim_events_list_v1';
 const ACTIVE_EVENT_KEY = 'tim_active_event_id_v1';
 const REGISTRATIONS_KEY = 'tim_attendee_registrations_v1';
 const CURRENT_ATTENDEE_SESSION_KEY = 'tim_current_session_attendee_v1';
+
+export const DATA_SYNC_EVENT = 'tim_cross_device_data_synced';
+
+export function onDataSync(callback: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(DATA_SYNC_EVENT, callback);
+  return () => {
+    window.removeEventListener(DATA_SYNC_EVENT, callback);
+  };
+}
+
+export function notifyDataSynced(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(DATA_SYNC_EVENT));
+}
 
 export const DEFAULT_EVENT: EventSession = {
   id: 'tim_summit_2026',
@@ -35,6 +53,44 @@ export function getEvents(): EventSession[] {
   }
 }
 
+export function mergeRemoteEvents(remoteEvents: EventSession[]): EventSession[] {
+  if (!remoteEvents || !Array.isArray(remoteEvents) || remoteEvents.length === 0) {
+    return getEvents();
+  }
+  const current = getEvents();
+  const map = new Map<string, EventSession>();
+
+  // Add current local
+  current.forEach((item) => {
+    map.set(item.id, item);
+  });
+
+  // Merge remote items, preserving existing without deleting any data
+  remoteEvents.forEach((rem) => {
+    if (!rem || !rem.id) return;
+    const loc = map.get(rem.id);
+    if (!loc) {
+      map.set(rem.id, rem);
+    } else {
+      map.set(rem.id, {
+        ...loc,
+        ...rem,
+        name: rem.name || loc.name,
+        code: rem.code || loc.code,
+        description: rem.description || loc.description,
+        highScore: Math.max(loc.highScore || 0, rem.highScore || 0),
+      });
+    }
+  });
+
+  const merged = Array.from(map.values());
+  try {
+    localStorage.setItem(EVENTS_KEY, JSON.stringify(merged));
+  } catch {}
+  notifyDataSynced();
+  return merged;
+}
+
 export function saveEvents(events: EventSession[]): void {
   try {
     localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
@@ -42,10 +98,11 @@ export function saveEvents(events: EventSession[]): void {
     console.error('Failed to save events locally', err);
   }
 
-  // Sync to Firebase Firestore in background
+  // Sync to Firebase Firestore in background so other devices see it
   events.forEach((ev) => {
     saveEventToFirestore(ev).catch(() => {});
   });
+  notifyDataSynced();
 }
 
 export function getActiveEventId(): string {
@@ -183,7 +240,89 @@ export function mergeRemoteAttendees(remoteAttendees: AttendeeRegistration[]): A
   try {
     localStorage.setItem(REGISTRATIONS_KEY, JSON.stringify(merged));
   } catch {}
+  notifyDataSynced();
   return merged;
+}
+
+export async function syncEventsAndAttendeesWithFirestore(): Promise<void> {
+  try {
+    // 1. Fetch all remote events and merge without deleting local events
+    const remoteEvents = await fetchEventsFromFirestore();
+    if (remoteEvents && remoteEvents.length > 0) {
+      mergeRemoteEvents(remoteEvents);
+    }
+
+    // 2. Upload any local events that are not yet in Firestore
+    const localEvents = getEvents();
+    localEvents.forEach((ev) => {
+      saveEventToFirestore(ev).catch(() => {});
+    });
+
+    // 3. For each event, fetch all remote attendees and merge without deleting
+    for (const ev of localEvents) {
+      const remoteAttendees = await fetchAttendeesForEvent(ev.id);
+      if (remoteAttendees && remoteAttendees.length > 0) {
+        mergeRemoteAttendees(remoteAttendees);
+      }
+    }
+
+    // 4. Upload any local registrations to Firestore so all devices see them
+    const allLocalRegs = getAllRegistrations();
+    allLocalRegs.forEach((reg) => {
+      saveAttendeeToFirestore(reg).catch(() => {});
+    });
+
+    notifyDataSynced();
+  } catch (err) {
+    console.warn('[Sync] Cross-device sync error:', err);
+  }
+}
+
+export function initGlobalCrossDeviceSync(): () => void {
+  const unsubscribers: (() => void)[] = [];
+
+  // Run initial comprehensive bidirectional sync
+  syncEventsAndAttendeesWithFirestore().catch(() => {});
+
+  // Subscribe to real-time events collection updates
+  try {
+    const unsubEvents = subscribeToEvents((remoteEvents) => {
+      mergeRemoteEvents(remoteEvents);
+      notifyDataSynced();
+
+      // Listen for attendees on any newly discovered events
+      remoteEvents.forEach((ev) => {
+        try {
+          const unsubAtt = subscribeToEventAttendees(ev.id, (remoteAtts) => {
+            mergeRemoteAttendees(remoteAtts);
+          });
+          unsubscribers.push(unsubAtt);
+        } catch {}
+      });
+    });
+    unsubscribers.push(unsubEvents);
+  } catch (err) {
+    console.warn('[Sync] subscribeToEvents failed:', err);
+  }
+
+  // Subscribe to real-time attendee updates for all known events
+  const currentEvents = getEvents();
+  currentEvents.forEach((ev) => {
+    try {
+      const unsubAtt = subscribeToEventAttendees(ev.id, (remoteAtts) => {
+        mergeRemoteAttendees(remoteAtts);
+      });
+      unsubscribers.push(unsubAtt);
+    } catch {}
+  });
+
+  return () => {
+    unsubscribers.forEach((fn) => {
+      try {
+        fn();
+      } catch {}
+    });
+  };
 }
 
 export function saveRegistration(data: {
@@ -244,6 +383,7 @@ export function saveRegistration(data: {
   } catch (err) {
     console.error('Failed to save registration locally', err);
   }
+  notifyDataSynced();
 
   // Persist to Firebase Firestore
   saveAttendeeToFirestore(registration).catch((err) => {
@@ -301,6 +441,7 @@ export function updateAttendeeScore(attendeeId: string, coins: number): Attendee
   } catch (err) {
     console.error('Failed to update attendee score locally', err);
   }
+  notifyDataSynced();
 
   // Persist directly to Firebase Firestore
   updateAttendeeScoreInFirestore(updated.eventId, updated.id, {
@@ -322,6 +463,7 @@ export function deleteRegistration(eventId: string, regId: string): void {
   } catch (err) {
     console.error(err);
   }
+  notifyDataSynced();
 
   // Delete from Firestore
   deleteAttendeeFromFirestore(eventId, regId).catch(() => {});

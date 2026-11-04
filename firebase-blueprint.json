@@ -10,7 +10,8 @@
         "code": { "type": "string", "maxLength": 50 },
         "description": { "type": "string", "maxLength": 500 },
         "createdAt": { "type": "string", "maxLength": 64 },
-        "isActive": { "type": "boolean" }
+        "isActive": { "type": "boolean" },
+        "highScore": { "type": "number" }
       },
       "required": ["id", "name", "createdAt"]
     },
@@ -68,6 +69,17 @@
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["sessionId", "eventId"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global cross-device application configuration, branding, prizes, and themes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "maxLength": 64 },
+        "config": { "type": "object" }
+      },
+      "required": ["id"]
     }
   },
   "firestore": {
@@ -86,6 +98,10 @@
     "/game_sessions/{sessionId}": {
       "schema": { "$ref": "#/entities/GameSession" },
       "description": "Active game sessions with real-time mobile controller input"
+    },
+    "/app_settings/{settingsId}": {
+      "schema": { "$ref": "#/entities/AppSettings" },
+      "description": "Cross-device global configuration and game settings"
     }
   }
 }

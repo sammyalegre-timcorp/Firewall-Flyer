@@ -1,4 +1,5 @@
 import { AppConfig, Character, MonsterConfig, CoinConfig, SkylineTheme, GameTheme, PrizeTier, RegistrationFieldsSettings } from '../types/game';
+import { saveAppSettingsToFirestore, fetchAppSettingsFromFirestore, subscribeToAppSettings } from '../lib/firebase';
 
 // Generated asset paths
 export const DEFAULT_BRAND_LOGO = '/assets/aistudio/TIM_LOGO_low_quality_d0071df0.png';
@@ -617,4 +618,87 @@ export function saveAppConfig(config: AppConfig): void {
   } catch (err) {
     console.error('Failed to save config to localStorage', err);
   }
+
+  // Cross-device sync via Firestore
+  saveAppSettingsToFirestore(config).catch((err) => {
+    console.warn('[Sync] Could not save app config to Firestore:', err);
+  });
+}
+
+export function mergeRemoteAppConfig(remote: Partial<AppConfig>): AppConfig {
+  const current = loadAppConfig();
+  const theme: GameTheme = remote.theme || current.theme || 'cyber_arcade';
+  const fallbackChars = theme === 'magic_academy' ? WIZARD_CHARACTERS : CYBER_CHARACTERS;
+
+  const merged: AppConfig = {
+    ...current,
+    ...remote,
+    theme,
+    branding: {
+      ...current.branding,
+      ...(remote.branding || {}),
+    },
+    settings: {
+      ...current.settings,
+      ...(remote.settings || {}),
+      prizeTiers:
+        Array.isArray(remote.settings?.prizeTiers) && remote.settings.prizeTiers.length > 0
+          ? remote.settings.prizeTiers
+          : current.settings.prizeTiers,
+      registrationFields: {
+        company:
+          remote.settings?.registrationFields?.company ||
+          current.settings?.registrationFields?.company ||
+          DEFAULT_REGISTRATION_FIELDS.company,
+        email:
+          remote.settings?.registrationFields?.email ||
+          current.settings?.registrationFields?.email ||
+          DEFAULT_REGISTRATION_FIELDS.email,
+        contactNumber:
+          remote.settings?.registrationFields?.contactNumber ||
+          current.settings?.registrationFields?.contactNumber ||
+          DEFAULT_REGISTRATION_FIELDS.contactNumber,
+        position:
+          remote.settings?.registrationFields?.position ||
+          current.settings?.registrationFields?.position ||
+          DEFAULT_REGISTRATION_FIELDS.position,
+      },
+    },
+    customSkyline: {
+      ...current.customSkyline,
+      ...(remote.customSkyline || {}),
+    },
+    characters:
+      remote.characters && remote.characters.length === 6 ? remote.characters : fallbackChars,
+  };
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+  } catch {}
+  return merged;
+}
+
+export async function syncAppConfigFromFirestore(onUpdate?: (config: AppConfig) => void): Promise<void> {
+  try {
+    const remote = await fetchAppSettingsFromFirestore();
+    if (remote) {
+      const merged = mergeRemoteAppConfig(remote);
+      if (onUpdate) onUpdate(merged);
+    } else {
+      // First device initialization: upload current config to Firestore so all subsequent devices share it
+      const local = loadAppConfig();
+      saveAppSettingsToFirestore(local).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[Sync] Could not sync app config from Firestore:', err);
+  }
+}
+
+export function subscribeToRemoteAppConfig(onUpdate: (config: AppConfig) => void): () => void {
+  return subscribeToAppSettings((remote) => {
+    if (remote) {
+      const merged = mergeRemoteAppConfig(remote);
+      onUpdate(merged);
+    }
+  });
 }
