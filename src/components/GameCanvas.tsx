@@ -446,6 +446,60 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   }, [isFullscreen]);
 
   // -----------------------------------------------------------------
+  // Flight Reset & Launch Helpers
+  // -----------------------------------------------------------------
+  // Flight Reset & Launch Helpers
+  // -----------------------------------------------------------------
+  const resetToReady = useCallback(() => {
+    const h = stateRef.current.canvasHeight || 560;
+    const initialTime = config.settings.gameDurationSeconds ?? 60;
+    stateRef.current.gameState = 'READY';
+    stateRef.current.isThrusting = false;
+    stateRef.current.cameraX = 0;
+    stateRef.current.playerX = 130;
+    stateRef.current.playerY = h * 0.45;
+    stateRef.current.playerVy = 0;
+    stateRef.current.playerAngle = 0;
+    stateRef.current.hoverTimer = 0;
+    stateRef.current.coins = 0;
+    stateRef.current.level = 1;
+    stateRef.current.timeRemaining = initialTime;
+    stateRef.current.maxTime = initialTime;
+    stateRef.current.gameOverReason = 'CRASH';
+    stateRef.current.monsters = [];
+    stateRef.current.coinsList = [];
+    stateRef.current.particles = [];
+    stateRef.current.floatingTexts = [];
+    stateRef.current.nextMonsterDist = 500;
+    stateRef.current.nextCoinGroupDist = 220;
+
+    setShowRegistration(false);
+    setShowInstructions(false);
+    showRegistrationRef.current = false;
+    showInstructionsRef.current = false;
+
+    timeRemainingRef.current = initialTime;
+    setTimeRemaining(initialTime);
+    setGameOverReason('CRASH');
+    setCoinsCollected(0);
+    setCurrentLevel(1);
+    setIsNewHighScore(false);
+    setGameState('READY');
+    sound.stopJetpack();
+    if (bgmActive) sound.setBgm(true);
+
+    const sessionId = config.settings.activeEventId;
+    if (sessionId) {
+      updateGameSession(sessionId, {
+        status: 'ready',
+        gameOver: false,
+        currentScore: 0,
+        timeRemaining: initialTime,
+      }).catch(() => {});
+    }
+  }, [config.settings.gameDurationSeconds, config.settings.activeEventId, bgmActive]);
+
+  // -----------------------------------------------------------------
   // Input Handling: Hold to fly, Release to fall
   // -----------------------------------------------------------------
   const startThrust = useCallback(() => {
@@ -456,6 +510,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       setGameState('PLAYING');
       sound.startJetpack(config.settings.soundEnabled);
       sound.setBgm(config.settings.bgmEnabled);
+
+      const sessionId = config.settings.activeEventId;
+      if (sessionId) {
+        updateGameSession(sessionId, {
+          status: 'playing',
+          gameOver: false,
+        }).catch(() => {});
+      }
       return;
     }
 
@@ -476,6 +538,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
   const lastFlapTriggerRef = useRef<number>(0);
 
   const triggerControllerFlap = useCallback(() => {
+    if (stateRef.current.gameState === 'GAME_OVER') {
+      resetToReady();
+      return;
+    }
+
     if (stateRef.current.gameState === 'READY') {
       stateRef.current.gameState = 'PLAYING';
       stateRef.current.isThrusting = true;
@@ -500,7 +567,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       stateRef.current.isThrusting = false;
       sound.stopJetpack();
     }, 160);
-  }, [config]);
+  }, [config, resetToReady]);
 
   // Real-time Mobile Controller sync from Firestore
   useEffect(() => {
@@ -520,12 +587,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       // Controller tap pulse
       if (session.flapTrigger && session.flapTrigger > lastFlapTriggerRef.current) {
         lastFlapTriggerRef.current = session.flapTrigger;
-        triggerControllerFlap();
+        if (stateRef.current.gameState === 'GAME_OVER') {
+          resetToReady();
+        } else {
+          triggerControllerFlap();
+        }
       }
     });
 
     return () => unsub();
-  }, [config.settings.activeEventId, currentAttendee, triggerControllerFlap]);
+  }, [config.settings.activeEventId, currentAttendee, triggerControllerFlap, resetToReady]);
 
   // Broadcast game status and score to mobile phone controller
   useEffect(() => {
@@ -631,6 +702,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
           return;
         }
         e.preventDefault();
+        if (stateRef.current.gameState === 'GAME_OVER') {
+          resetToReady();
+          return;
+        }
         if (!stateRef.current.isThrusting) {
           startThrust();
         }
@@ -664,40 +739,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [startThrust, stopThrust, toggleFullscreen]);
-
-  const resetToReady = () => {
-    const h = stateRef.current.canvasHeight || 560;
-    const initialTime = config.settings.gameDurationSeconds ?? 60;
-    stateRef.current.gameState = 'READY';
-    stateRef.current.isThrusting = false;
-    stateRef.current.playerX = 130;
-    stateRef.current.playerY = h * 0.45;
-    stateRef.current.playerVy = 0;
-    stateRef.current.playerAngle = 0;
-    stateRef.current.hoverTimer = 0;
-    stateRef.current.coins = 0;
-    stateRef.current.level = 1;
-    stateRef.current.timeRemaining = initialTime;
-    stateRef.current.maxTime = initialTime;
-    stateRef.current.gameOverReason = 'CRASH';
-    stateRef.current.monsters = [];
-    stateRef.current.coinsList = [];
-    stateRef.current.particles = [];
-    stateRef.current.floatingTexts = [];
-    stateRef.current.nextMonsterDist = stateRef.current.cameraX + 500;
-    stateRef.current.nextCoinGroupDist = stateRef.current.cameraX + 220;
-
-    timeRemainingRef.current = initialTime;
-    setTimeRemaining(initialTime);
-    setGameOverReason('CRASH');
-    setCoinsCollected(0);
-    setCurrentLevel(1);
-    setIsNewHighScore(false);
-    setGameState('READY');
-    sound.stopJetpack();
-    if (bgmActive) sound.setBgm(true);
-  };
+  }, [startThrust, stopThrust, toggleFullscreen, resetToReady]);
 
   const togglePause = () => {
     if (stateRef.current.gameState === 'PLAYING') {
@@ -3456,7 +3498,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                       setCurrentAttendee(duplicateAttendeeAlert);
                       setCurrentSessionAttendee(duplicateAttendeeAlert);
                       setDuplicateAttendeeAlert(null);
-                      setShowRegistration(false);
+                      resetToReady();
                     }}
                     className="flex-1 py-1 px-3 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-black uppercase tracking-wider cursor-pointer shadow-sm transition-all text-center"
                   >
@@ -3530,7 +3572,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                     });
                     setCurrentAttendee(reg);
                     setCurrentSessionAttendee(reg);
-                    setShowRegistration(false);
+                    resetToReady();
                   }}
                   onKeyDown={(e) => e.stopPropagation()}
                   onKeyUp={(e) => e.stopPropagation()}
@@ -3729,7 +3771,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                       setCurrentAttendee(adminPilot);
                       setCurrentSessionAttendee(adminPilot);
                       setShowAdminConfirmModal(false);
-                      setShowRegistration(false);
+                      resetToReady();
                     }}
                     className="py-2.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md"
                   >
@@ -4357,29 +4399,54 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ config }) => {
                 </div>
               )}
 
-              {/* REGISTER (NEW ATTENDEE) ACTION - Always returns to Registration */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearCurrentSessionAttendee();
-                  setCurrentAttendee(null);
-                  setRegName('');
-                  setRegCompany('');
-                  setRegEmail('');
-                  setRegContactNumber('');
-                  setRegPosition('');
-                  setRegError(null);
-                  setDuplicateAttendeeAlert(null);
-                  resetToReady();
-                  if (!isQrMode) {
-                    setShowRegistration(true);
-                  }
-                }}
-                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-cyan-400 via-sky-400 to-purple-500 hover:from-cyan-300 hover:to-purple-400 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg hover:shadow-cyan-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Register</span>
-              </button>
+              {/* ACTION BUTTONS (PLAY AGAIN & NEW PILOT) */}
+              <div className="w-full flex flex-col sm:flex-row items-center gap-2.5">
+                {/* PLAY AGAIN (PRIMARY ACTION): Plays immediately regardless of registration status */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if ((config.settings.requireRegistration ?? true) && !currentAttendee && !isQrMode) {
+                      resetToReady();
+                      setShowRegistration(true);
+                    } else {
+                      resetToReady();
+                    }
+                  }}
+                  className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-500 hover:from-emerald-300 hover:to-sky-400 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg hover:shadow-cyan-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Play Again</span>
+                </button>
+
+                {/* NEW PILOT / REGISTER (SECONDARY OPTION when registration is enabled) */}
+                {(config.settings.requireRegistration !== false) && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearCurrentSessionAttendee();
+                      setCurrentAttendee(null);
+                      setRegName('');
+                      setRegCompany('');
+                      setRegEmail('');
+                      setRegContactNumber('');
+                      setRegPosition('');
+                      setRegError(null);
+                      setDuplicateAttendeeAlert(null);
+                      resetToReady();
+                      if (!isQrMode) {
+                        setShowRegistration(true);
+                      }
+                    }}
+                    className="w-full sm:w-auto py-3.5 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white font-bold text-xs uppercase tracking-wider shadow transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                    title="Register a new pilot for this event"
+                  >
+                    <UserPlus className="w-4 h-4 text-cyan-400" />
+                    <span>New Pilot</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         );

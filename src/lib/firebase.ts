@@ -4,6 +4,7 @@ import {
   getFirestore,
   doc,
   setDoc,
+  getDoc,
   getDocs,
   collection,
   onSnapshot,
@@ -343,3 +344,86 @@ export function subscribeToGameSession(
     }
   );
 }
+
+export async function setThrustState(sessionId: string, isThrusting: boolean): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'game_sessions', sessionId),
+      {
+        isThrusting,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn(`[Firestore] setThrustState fallback:`, err);
+  }
+}
+
+export async function claimDeviceSlot(
+  sessionId: string,
+  deviceId: string,
+  deviceName: string,
+  attendee?: AttendeeRegistration | null
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const sessionRef = doc(db, 'game_sessions', sessionId);
+    const snap = await getDoc(sessionRef);
+
+    if (snap.exists()) {
+      const data = snap.data() as GameSessionData;
+      const isOccupiedByOther =
+        data.connectedDeviceId &&
+        data.connectedDeviceId !== deviceId &&
+        data.status !== 'game_over' &&
+        data.updatedAt &&
+        Date.now() - new Date(data.updatedAt).getTime() < 45000;
+
+      if (isOccupiedByOther) {
+        return {
+          success: false,
+          message: `Cockpit is currently occupied by ${data.connectedDeviceName || 'another pilot'}. Only 1 controller device allowed.`,
+        };
+      }
+    }
+
+    await setDoc(
+      sessionRef,
+      {
+        sessionId,
+        connectedDeviceId: deviceId,
+        connectedDeviceName: deviceName,
+        activeAttendee: attendee || null,
+        connectedAt: Date.now(),
+        status: 'ready',
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+
+    return { success: true };
+  } catch (err) {
+    console.warn(`[Firestore] claimDeviceSlot fallback:`, err);
+    return { success: true };
+  }
+}
+
+export async function releaseDeviceSlot(sessionId: string): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'game_sessions', sessionId),
+      {
+        connectedDeviceId: null,
+        connectedDeviceName: null,
+        activeAttendee: null,
+        isThrusting: false,
+        status: 'waiting',
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn(`[Firestore] releaseDeviceSlot fallback:`, err);
+  }
+}
+
